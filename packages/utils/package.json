@@ -1,0 +1,10 @@
+{
+  "name": "@cloutdrop/utils",
+  "version": "0.0.1",
+  "main": "./src/utils.ts",
+  "types": "./src/utils.ts",
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.5"
+  }
+}

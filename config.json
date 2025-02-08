@@ -1,0 +1,17 @@
+{
+    "rpc": {
+        "url": "https://api.mainnet-beta.solana.com",
+        "request_delay": 0.5
+    },
+    "transactions": {
+        "limit": 100
+    },
+    "whale_detection": {
+        "early_percent": 15,
+        "whale_threshold_percentile": 90
+    },
+    "output": {
+        "transactions_file_template": "solana_token_transactions_{}.csv",
+        "whales_file_template": "early_whales_{}.csv"
+    }
+} 
