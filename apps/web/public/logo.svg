@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 45" x="0px" y="0px">
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:rgb(59,130,246);stop-opacity:1" />
+      <stop offset="100%" style="stop-color:rgb(99,102,241);stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <path d="M18,0A16,16,0,0,0,1.88,15.77a1,1,0,0,0,.2.61.47.47,0,0,0,.12.13L3.79,18,17,30.34l.33.3a1,1,0,0,0,.69.27,1,1,0,0,0,.67-.27l.33-.3L32.21,18l1.59-1.5a.47.47,0,0,0,.12-.13,1,1,0,0,0,.21-.61A16,16,0,0,0,18,0ZM17,27.58,4.63,16a8.23,8.23,0,0,1,5.82-1.94c3.91,0,6.54,1.82,6.54,3.53Zm2,0v-10c0-1.71,2.63-3.53,6.54-3.53A8.24,8.24,0,0,1,31.38,16Z" fill="url(#logoGradient)"/>
+  <circle cx="18" cy="34.24" r="1.76" fill="url(#logoGradient)"/>
+  <text x="0" y="51" fill="#000000" font-size="5px" font-weight="bold" font-family="'Helvetica Neue', Helvetica, Arial-Unicode, Arial, Sans-serif">Created by Chintuza</text>
+  <text x="0" y="56" fill="#000000" font-size="5px" font-weight="bold" font-family="'Helvetica Neue', Helvetica, Arial-Unicode, Arial, Sans-serif">from the Noun Project</text>
+</svg>

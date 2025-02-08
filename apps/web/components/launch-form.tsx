@@ -15,6 +15,11 @@ import { useWallet } from "@solana/wallet-adapter-react"
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui"
 import { AirdropAnimation } from "@/components/airdrop-animation"
 
+const HELIUS_API_KEY = process.env.NEXT_PUBLIC_HELIUS_API_KEY
+if (!HELIUS_API_KEY) {
+  throw new Error("HELIUS_API_KEY is not set")
+}
+
 const STEPS = [
   {
     title: "Token Information",
@@ -47,6 +52,8 @@ export function LaunchForm() {
       community: 33,
       whale: 34,
     },
+    image: "",
+    description: "",
   })
   const [isEnteringSol, setIsEnteringSol] = useState(false)
   const [exchangeRate, setExchangeRate] = useState(0.01)
@@ -54,23 +61,57 @@ export function LaunchForm() {
   const [isValidated, setIsValidated] = useState(false)
   const [isAirdropInProgress, setIsAirdropInProgress] = useState(false)
   const [isAirdropComplete, setIsAirdropComplete] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
 
   const { publicKey, connected } = useWallet()
   const router = useRouter()
 
   const fetchTokenInfo = async (contractAddress: string) => {
     setIsLoading(true)
-    // Simulating API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    const tokenInfo = {
-      name: "Sample Coin",
-      ticker: "SMPL",
-      exchangeRate: 0.01, // 1 SMPL = 0.01 SOL
+    setErrorMessage("") // Reset error message
+    try {
+      const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'my-id',
+          method: 'getAsset',
+          params: {
+            id: contractAddress,
+            displayOptions: {
+              showFungible: true, // Return details about a fungible token
+            },
+          },
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Token not found")
+      }
+
+      const { result } = await response.json()
+      const tokenInfo = {
+        name: result.content?.metadata?.name || "Unknown",
+        ticker: result.content?.metadata?.symbol || "N/A",
+        description: result.content?.metadata?.description || "No description available",
+        exchangeRate: result.token_info?.price_info?.price_per_token || 0, // Default to 0 if not available
+        image: result.content?.files?.[0]?.uri || result.content?.links?.image || "", // Use the image URI
+      }
+
+      setExchangeRate(tokenInfo.exchangeRate)
+      setIsValidated(true)
+      return tokenInfo
+    } catch (error) {
+      const err = error as Error;
+      console.error("Error fetching token info:", err);
+      setErrorMessage(err.message);
+      setIsValidated(false);
+    } finally {
+      setIsLoading(false)
     }
-    setExchangeRate(tokenInfo.exchangeRate)
-    setIsLoading(false)
-    setIsValidated(true)
-    return tokenInfo
   }
 
   const convertAmount = (amount: string, fromSol: boolean) => {
@@ -85,11 +126,15 @@ export function LaunchForm() {
     if (field === "contractAddress") {
       if (value.length > 0) {
         const tokenInfo = await fetchTokenInfo(value)
-        setFormData((prev) => ({
-          ...prev,
-          coinName: tokenInfo.name,
-          coinTicker: tokenInfo.ticker,
-        }))
+        if (tokenInfo) {
+          setFormData((prev) => ({
+            ...prev,
+            coinName: tokenInfo.name,
+            coinTicker: tokenInfo.ticker,
+            image: tokenInfo.image,
+            description: tokenInfo.description,
+          }))
+        }
       } else {
         setIsValidated(false)
       }
@@ -253,12 +298,18 @@ export function LaunchForm() {
                     className="space-y-6"
                   >
                     <div className="flex items-center space-x-4 bg-card p-4 rounded-lg shadow-sm">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
-                        {formData.coinTicker.slice(0, 2)}
-                      </div>
+                      {formData.image ? (
+                        <img src={formData.image} alt={`${formData.coinName} logo`} className="w-12 h-12 rounded-full" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
+                          {formData.coinName.charAt(0)}
+                        </div>
+                      )}
                       <div>
-                        <h3 className="font-semibold text-lg">{formData.coinName}</h3>
-                        <p className="text-sm text-muted-foreground">{formData.coinTicker}</p>
+                        <h3 className="font-semibold text-lg">
+                          {formData.coinName} <span className="text-sm text-muted-foreground">${formData.coinTicker}</span>
+                        </h3>
+                        <p className="text-sm text-muted-foreground">{formData.description}</p>
                       </div>
                     </div>
 
@@ -299,6 +350,11 @@ export function LaunchForm() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              {errorMessage && (
+                <div className="text-red-500 text-sm mt-2">
+                  {errorMessage}
+                </div>
+              )}
             </div>
           )}
 

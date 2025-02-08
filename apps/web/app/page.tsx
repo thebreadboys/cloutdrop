@@ -1,7 +1,8 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { WalletIcon, TargetIcon, CoinsIcon, RocketIcon, ChevronRightIcon } from "lucide-react"
+import { ChevronRightIcon, WalletIcon, TargetIcon, CoinsIcon, RocketIcon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
+import Logo from "@/public/logo.svg"
 
 export default function LandingPage() {
   return (
@@ -9,7 +10,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 max-w-screen-2xl items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500" />
+            <Logo className="h-6 w-6 shadow-md hover:shadow-lg transition-shadow duration-300" style={{ filter: 'drop-shadow(0 0 5px rgba(59,130,246,0.7))' }} />
             <span className="font-bold">Cloutdrop</span>
           </Link>
           <nav className="flex items-center space-x-6">
