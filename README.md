@@ -43,7 +43,7 @@ CloutDrop/
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/breadboys/cloutdrop.git
+git clone https://github.com/thebreadboys/cloutdrop.git
 cd cloutdrop
 ```
 
@@ -76,8 +76,8 @@ Built during ETHGlobal London 2024, CloutDrop aims to solve the challenges of fa
 
 ## 👥 Team
 
-- Henry - Buidler
-- Joey - Buidler
+- Henry - buidler
+- Joey - buidler
 
 
 ## 📄 License
@@ -91,6 +91,7 @@ Conditions:
 
 You must give appropriate credit, provide a link to the license, and indicate if changes were made. You may do so in any reasonable manner, but not in any way that suggests the licensor endorses you or your use.
 You cannot use the code for commercial purposes.
+
 ---
 
 Built with ❤️ at ETHOxford 2025 
