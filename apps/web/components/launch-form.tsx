@@ -783,10 +783,14 @@ export function LaunchForm() {
         </Button>
       </div>
 
-      {/* Additional information */}
-      {isValidated && (
-        <div className="text-sm text-muted-foreground mt-2">
-          Detected Chain: {chainType}
+      {/* Chain detection status */}
+      {isValidated && chainType && (
+        <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-md text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full" />
+            <span className="font-medium">Network:</span>
+            <span>{chainType === 'BSC' ? 'Binance Smart Chain' : 'Solana'}</span>
+          </div>
         </div>
       )}
     </div>
