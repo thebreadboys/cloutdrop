@@ -22,8 +22,7 @@ We find relevant, and powerful KOLs for your airdrop, so theres no more need for
 - **Frontend**: Next.js 14, React, TypeScript
 - **UI Components**: shadcn/ui, Tailwind CSS
 - **Blockchain Integration**: Web3.js
-- **Architecture**: Monorepo structure using pnpm
-- **Smart Contracts**: Solidity (Ethereum)
+- **Smart Contracts**: Solana
 
 ## 🏗️ Project Structure
 
@@ -44,7 +43,7 @@ CloutDrop/
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/cloutdrop.git
+git clone https://github.com/breadboys/cloutdrop.git
 cd cloutdrop
 ```
 
@@ -69,7 +68,7 @@ pnpm dev
 2. Create a new airdrop by filling out the launch form
 3. Set your distribution parameters and token details
 4. Monitor your airdrop's performance in the analytics dashboard
-5. Watch as participants claim their tokens with our engaging animation
+5. Watch as participants claim their tokens
 
 ## 🏆 Hackathon Achievement
 
@@ -77,24 +76,24 @@ Built during ETHGlobal London 2024, CloutDrop aims to solve the challenges of fa
 
 ## 👥 Team
 
-- [Team Member 1] - Role
-- [Team Member 2] - Role
-- [Team Member 3] - Role
-- [Team Member 4] - Role
+- Henry - Buidler
+- Joey - Buidler
 
-## 🔗 Links
-
-- [Demo](https://your-demo-link.com)
-- [Presentation](https://your-presentation-link.com)
-- [Smart Contracts](https://your-contracts-link.com)
 
 ## 📄 License
+This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0).
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+You are free to:
 
+Copy, distribute, and display the code
+Remix, transform, and build upon the code for non-commercial purposes only
+Conditions:
+
+You must give appropriate credit, provide a link to the license, and indicate if changes were made. You may do so in any reasonable manner, but not in any way that suggests the licensor endorses you or your use.
+You cannot use the code for commercial purposes.
 ---
 
-Built with ❤️ at ETHGlobal London 2024
+Built with ❤️ at ETHOxford 2025 
 
 
 # shadcn/ui monorepo template
