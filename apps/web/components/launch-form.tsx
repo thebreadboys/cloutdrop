@@ -207,6 +207,12 @@ export function LaunchForm() {
 
   const initiateAirdrop = async () => {
     setIsAirdropInProgress(true)
+    // Store token info in localStorage
+    localStorage.setItem('tokenInfo', JSON.stringify({
+      contractAddress: formData.contractAddress,
+      coinName: formData.coinName,
+      coinTicker: formData.coinTicker,
+    }))
     // Simulate airdrop process
     await new Promise((resolve) => setTimeout(resolve, 5000))
     setIsAirdropInProgress(false)
@@ -225,8 +231,8 @@ export function LaunchForm() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <CheckCircle2 className="w-16 h-16 text-green-500" />
-        <h2 className="text-2xl font-bold">Airdrop Complete!</h2>
-        <p className="text-muted-foreground">Redirecting to analytics...</p>
+        <h2 className="text-2xl font-bold">Airdrop Setup Complete!</h2>
+        <p className="text-muted-foreground">Token distribution will begin shortly...</p>
       </div>
     )
   }

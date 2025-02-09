@@ -28,18 +28,20 @@ export default function LandingPage() {
                   Launch Airdrop
                 </Button>
               </Link>
-              <Button variant="outline" className="gap-2 px-8 py-6 text-lg">
-                <ChevronRightIcon className="h-5 w-5" />
-                Learn More
-              </Button>
+              <Link href="#features">
+                <Button 
+                  variant="outline" 
+                  className="gap-2 px-8 py-6 text-lg border-blue-500/20 bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
+                >
+                  <ChevronRightIcon className="h-5 w-5" />
+                  Learn More
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
 
-        <div className="container py-12 md:py-24">
-          <h2 className="text-3xl font-bold text-center bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent">
-            Why Choose Cloutdrop?
-          </h2>
+        <div id="features" className="container md:py-24">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {[
               {
@@ -78,7 +80,7 @@ export default function LandingPage() {
         </div>
 
         <div className="container py-12 md:py-24">
-          <h2 className="text-3xl font-bold text-center bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent">
+          <h2 className="text-3xl font-bold text-center bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent py-12">
             How Cloutdrop Works
           </h2>
           <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
@@ -126,10 +128,10 @@ export default function LandingPage() {
             <Link href="/launch">
               <Button
                 size="lg"
-                className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                className="gap-2"
               >
-                Launch Airdrop
-                <ChevronRightIcon className="ml-2 h-4 w-4" />
+                <RocketIcon className="h-5 w-5" />
+                Launch Airdrop Now
               </Button>
             </Link>
           </div>
