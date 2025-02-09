@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui"
 import { AirdropAnimation } from "@/components/airdrop-animation"
+import { Connection, PublicKey, Transaction } from "@solana/web3.js"
+import { createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token"
 
 const STEPS = [
   {
@@ -33,6 +35,33 @@ const STEPS = [
     description: "Review your airdrop details and launch.",
   },
 ]
+
+// Replace the existing check
+const DESTINATION_WALLET = process.env.NEXT_PUBLIC_DESTINATION_WALLET || ''
+
+const RPC_ENDPOINTS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://solana-api.projectserum.com",
+  "https://rpc.ankr.com/solana"
+];
+
+const getWorkingConnection = async (): Promise<Connection> => {
+  for (const endpoint of RPC_ENDPOINTS) {
+    try {
+      const connection = new Connection(endpoint, {
+        commitment: "finalized",
+        confirmTransactionInitialTimeout: 60000
+      });
+      await connection.getLatestBlockhash();
+      console.log(`Connected successfully to ${endpoint}`);
+      return connection;
+    } catch (error) {
+      console.warn(`Failed to connect to ${endpoint}`);
+      continue;
+    }
+  }
+  throw new Error("Unable to connect to any Solana RPC endpoint");
+};
 
 export function LaunchForm() {
   const [step, setStep] = useState(0)
@@ -54,8 +83,9 @@ export function LaunchForm() {
   const [isValidated, setIsValidated] = useState(false)
   const [isAirdropInProgress, setIsAirdropInProgress] = useState(false)
   const [isAirdropComplete, setIsAirdropComplete] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const { publicKey, connected } = useWallet()
+  const { publicKey, connected, sendTransaction } = useWallet()
   const router = useRouter()
 
   const fetchTokenInfo = async (contractAddress: string) => {
@@ -160,16 +190,135 @@ export function LaunchForm() {
     }
   }
 
+  const transferTokens = async () => {
+    try {
+      if (!publicKey || !connected) {
+        throw new Error("Wallet not connected")
+      }
+
+      if (!process.env.NEXT_PUBLIC_DESTINATION_WALLET) {
+        throw new Error("Destination wallet address not configured")
+      }
+
+      if (!formData.contractAddress) {
+        throw new Error("Token contract address is required")
+      }
+
+      if (!formData.airdropAmount || parseFloat(formData.airdropAmount) <= 0) {
+        throw new Error("Invalid transfer amount")
+      }
+
+      console.log("Starting transfer with details:", {
+        from: publicKey.toString(),
+        to: process.env.NEXT_PUBLIC_DESTINATION_WALLET,
+        tokenMint: formData.contractAddress,
+        amount: formData.airdropAmount
+      })
+
+      // Get a working connection
+      const connection = await getWorkingConnection();
+      
+      // Get the token mint from the contract address
+      let mint;
+      try {
+        mint = new PublicKey(formData.contractAddress);
+        console.log("Valid mint address:", mint.toString());
+      } catch (error) {
+        throw new Error(`Invalid token address: ${(error as Error).message}`);
+      }
+
+      // Validate destination wallet
+      let destinationWallet;
+      try {
+        destinationWallet = new PublicKey(process.env.NEXT_PUBLIC_DESTINATION_WALLET);
+        console.log("Valid destination wallet:", destinationWallet.toString());
+      } catch (error) {
+        throw new Error(`Invalid destination wallet: ${(error as Error).message}`);
+      }
+
+      // Get ATAs with error handling
+      let senderATA, destinationATA;
+      try {
+        senderATA = await getAssociatedTokenAddress(mint, publicKey);
+        console.log("Sender ATA:", senderATA.toString());
+        
+        // Check if sender ATA exists
+        const senderAccount = await connection.getAccountInfo(senderATA);
+        if (!senderAccount) {
+          throw new Error("You don't have a token account for this token. Please create one first.");
+        }
+
+        destinationATA = await getAssociatedTokenAddress(mint, destinationWallet);
+        console.log("Destination ATA:", destinationATA.toString());
+        
+        // Check if destination ATA exists
+        const destAccount = await connection.getAccountInfo(destinationATA);
+        if (!destAccount) {
+          throw new Error("Destination token account doesn't exist. Please create it first.");
+        }
+      } catch (error) {
+        console.error("ATA error details:", error);
+        throw new Error(`Token account error: ${(error as Error).message}`);
+      }
+
+      // Create and send transaction with detailed error handling
+      try {
+        const transaction = new Transaction();
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = publicKey;
+
+        const transferInstruction = createTransferInstruction(
+          senderATA,
+          destinationATA,
+          publicKey,
+          Math.round(parseFloat(formData.airdropAmount) * Math.pow(10, 9))
+        );
+
+        transaction.add(transferInstruction);
+        
+        console.log("Sending transaction...");
+        const signature = await sendTransaction(transaction, connection);
+        console.log("Transaction sent, signature:", signature);
+        
+        console.log("Confirming transaction...");
+        await connection.confirmTransaction(signature, "confirmed");
+        console.log("Transaction confirmed!");
+        
+        return true;
+      } catch (error) {
+        console.error("Transaction error details:", error);
+        throw new Error(`Transaction failed: ${(error as Error).message}`);
+      }
+    } catch (error) {
+      console.error("Full error details:", error);
+      throw error;
+    }
+  }
+
   const initiateAirdrop = async () => {
-    setIsAirdropInProgress(true)
-    // Simulate airdrop process
-    await new Promise((resolve) => setTimeout(resolve, 5000))
-    setIsAirdropInProgress(false)
-    setIsAirdropComplete(true)
-    // Navigate to analytics page after a short delay
-    setTimeout(() => {
-      router.push("/analytics")
-    }, 2000)
+    try {
+      setError(null); // Clear any previous errors
+      console.log("Starting airdrop process...");
+      setIsAirdropInProgress(true);
+      
+      await transferTokens();
+      
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      setIsAirdropInProgress(false);
+      setIsAirdropComplete(true);
+      
+      setTimeout(() => {
+        router.push("/analytics");
+      }, 2000);
+    } catch (error) {
+      setIsAirdropInProgress(false);
+      setIsAirdropComplete(false);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      console.error("Airdrop failed:", errorMessage);
+      setError(errorMessage);
+      alert(`Airdrop failed: ${errorMessage}`);
+    }
   }
 
   if (isAirdropInProgress) {
@@ -188,6 +337,12 @@ export function LaunchForm() {
 
   return (
     <div className="space-y-8 max-w-2xl mx-auto">
+      {error && (
+        <div className="p-4 bg-red-100 text-red-800 rounded-md">
+          <p className="font-semibold">Error:</p>
+          <p>{error}</p>
+        </div>
+      )}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Launch Your Airdrop</h1>
         <p className="text-muted-foreground">Complete the steps below to set up your airdrop campaign.</p>

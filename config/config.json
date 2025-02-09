@@ -1,6 +1,6 @@
 {
     "rpc": {
-        "url": "https://api.mainnet-beta.solana.com",
+        "url": "https://api.testnet-beta.solana.com",
         "request_delay": 0.5
     },
     "transactions": {
