@@ -16,15 +16,36 @@ export default function AboutPage() {
       <SiteHeader />
 
       <main className="flex-1">
-        {/* Hero Section */}
         <div className="container py-12 md:py-24">
-          <div className="max-w-4xl mx-auto text-center space-y-6">
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl bg-gradient-to-r from-blue-500 to-indigo-500 bg-clip-text text-transparent">
-              Revolutionizing Airdrops
+          <div className="max-w-3xl mx-auto space-y-8">
+            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+              About Cloutdrop
             </h1>
-            <p className="text-xl text-muted-foreground">
-              Cutting through the noise to connect projects with true value creators
-            </p>
+            
+            <div className="prose prose-blue max-w-none">
+              <p className="text-lg text-muted-foreground">
+                Cloutdrop is revolutionizing the way crypto projects connect with their ideal audience through targeted airdrops on Solana.
+              </p>
+
+              <h2 className="text-2xl font-bold mt-8 mb-4">Our Mission</h2>
+              <p>
+                We believe in the power of community-driven growth in the crypto space. Our mission is to help promising projects find their perfect audience while ensuring token distributions reach the most engaged and relevant community members.
+              </p>
+
+              <h2 className="text-2xl font-bold mt-8 mb-4">Why Cloutdrop?</h2>
+              <ul className="list-disc pl-6 space-y-2">
+                <li>Smart targeting based on on-chain analytics and social engagement</li>
+                <li>Efficient token distribution with minimal waste</li>
+                <li>Real-time tracking and analytics</li>
+                <li>Support for Solana SPL tokens</li>
+                <li>Integration with major Solana wallets</li>
+              </ul>
+
+              <h2 className="text-2xl font-bold mt-8 mb-4">Our Technology</h2>
+              <p>
+                Built on Solana's high-performance blockchain, Cloutdrop leverages advanced analytics and machine learning to identify the most relevant recipients for your token airdrops. Our platform ensures secure, efficient, and targeted distribution of tokens to maximize the impact of your launch.
+              </p>
+            </div>
           </div>
         </div>
 

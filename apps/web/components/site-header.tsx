@@ -11,10 +11,10 @@ export function SiteHeader() {
           <span className="font-bold">Cloutdrop</span>
         </Link>
         <nav className="flex items-center space-x-6">
-          <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+          <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground">
             About
           </Link>
-          <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+          <Link href="/#features" className="text-sm text-muted-foreground hover:text-foreground">
             Features
           </Link>
           <Link href="/launch">
