@@ -1,3 +1,5 @@
+import { SiteHeader } from "@/components/site-header"
+import { SiteFooter } from "@/components/site-footer"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronRightIcon, WalletIcon, TargetIcon, CoinsIcon, RocketIcon } from "lucide-react"
@@ -7,67 +9,34 @@ import Logo from "@/public/logo.svg"
 export default function LandingPage() {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 max-w-screen-2xl items-center justify-between">
-          <Link href="/" className="flex items-center space-x-2">
-            <Logo className="h-6 w-6 shadow-md hover:shadow-lg transition-shadow duration-300" style={{ filter: 'drop-shadow(0 0 5px rgba(59,130,246,0.7))' }} />
-            <span className="font-bold">Cloutdrop</span>
-          </Link>
-          <nav className="flex items-center space-x-6">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              About
-            </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Features
-            </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Blog
-            </Link>
-            <Link href="/launch">
-              <Button
-                variant="outline"
-                className="border-blue-500/20 bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
-              >
-                Launch Airdrop
-              </Button>
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
+
       <main className="flex-1">
-        <section className="hero-gradient relative overflow-hidden">
-          <div className="container relative z-10 space-y-6 py-24 sm:py-32">
-            <div className="mx-auto flex max-w-[64rem] flex-col items-center gap-4 text-center">
-              <h1 className="bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text font-bold text-4xl text-transparent sm:text-5xl md:text-6xl lg:text-7xl">
-                Launch Your Coin to the Right Audience
-              </h1>
-              <p className="max-w-[42rem] leading-normal text-muted-foreground sm:text-xl sm:leading-8">
-                Targeted airdrops to top KOLs on Solana. Drive community engagement and accelerate your project's
-                growth.
-              </p>
-              <div className="flex gap-4">
-                <Link href="/launch">
-                  <Button
-                    size="lg"
-                    className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
-                  >
-                    Launch Airdrop
-                    <ChevronRightIcon className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="border-blue-500/20 bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
-                >
-                  Learn More
+        <div className="container py-12 md:py-24">
+          <div className="max-w-3xl mx-auto text-center space-y-8">
+            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
+              Launch Your Coin to the Right Audience
+            </h1>
+            <p className="mt-4 text-lg text-muted-foreground">
+              Targeted airdrops for Solana influencers, communities, and whales
+            </p>
+            
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link href="/launch">
+                <Button className="gap-2 px-8 py-6 text-lg">
+                  <RocketIcon className="h-5 w-5" />
+                  Launch Airdrop
                 </Button>
-              </div>
+              </Link>
+              <Button variant="outline" className="gap-2 px-8 py-6 text-lg">
+                <ChevronRightIcon className="h-5 w-5" />
+                Learn More
+              </Button>
             </div>
           </div>
-        </section>
+        </div>
 
-        <section className="container py-24 space-y-12">
+        <div className="container py-12 md:py-24">
           <h2 className="text-3xl font-bold text-center bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent">
             Why Choose Cloutdrop?
           </h2>
@@ -106,9 +75,9 @@ export default function LandingPage() {
               </Card>
             ))}
           </div>
-        </section>
+        </div>
 
-        <section className="container py-24 space-y-12">
+        <div className="container py-12 md:py-24">
           <h2 className="text-3xl font-bold text-center bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent">
             How Cloutdrop Works
           </h2>
@@ -144,54 +113,30 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-        </section>
+        </div>
 
-        <section className="border-t border-border/40 bg-gradient-to-b from-blue-500/[0.02] to-transparent">
-          <div className="container py-24 space-y-6">
-            <div className="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center">
-              <h2 className="font-bold text-3xl leading-[1.1] bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent">
-                Ready to Launch Your Airdrop?
-              </h2>
-              <p className="max-w-[42rem] leading-normal text-muted-foreground sm:text-lg sm:leading-7">
-                Join the next generation of crypto projects using targeted airdrops to build engaged communities.
-              </p>
-              <Link href="/launch">
-                <Button
-                  size="lg"
-                  className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
-                >
-                  Launch Airdrop
-                  <ChevronRightIcon className="ml-2 h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </section>
-      </main>
-      <footer className="border-t border-border/40 py-6 md:py-0">
-        <div className="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
-          <div className="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-            <Link href="/" className="flex items-center space-x-2">
-              <div className="h-4 w-4 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500" />
-              <span className="font-bold">Cloutdrop</span>
-            </Link>
-            <p className="text-center text-sm leading-loose text-muted-foreground md:text-left">
-              Built for the Solana ecosystem.
+        <div className="container py-12 md:py-24">
+          <div className="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center">
+            <h2 className="font-bold text-3xl leading-[1.1] bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent">
+              Ready to Launch Your Airdrop?
+            </h2>
+            <p className="max-w-[42rem] leading-normal text-muted-foreground sm:text-lg sm:leading-7">
+              Join the next generation of crypto projects using targeted airdrops to build engaged communities.
             </p>
-          </div>
-          <div className="flex gap-4">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Terms
-            </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Privacy
-            </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              About
+            <Link href="/launch">
+              <Button
+                size="lg"
+                className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+              >
+                Launch Airdrop
+                <ChevronRightIcon className="ml-2 h-4 w-4" />
+              </Button>
             </Link>
           </div>
         </div>
-      </footer>
+      </main>
+
+      <SiteFooter />
     </div>
   )
 }
