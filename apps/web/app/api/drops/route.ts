@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-)
+// const supabase = createClient(
+//   process.env.SUPABASE_URL!,
+//   process.env.SUPABASE_ANON_KEY!
+// )
 
 export async function POST(request: Request) {
   const headers = {
@@ -39,25 +39,25 @@ export async function POST(request: Request) {
       })
     }
 
-    // Insert into Supabase
-    const { data, error } = await supabase
-      .from('drops')
-      .insert([{
-        contract_address: body.contractAddress,
-        token_name: body.coinName,
-        token_ticker: body.coinTicker,
-        airdrop_amount: body.airdropAmount,
-        sol_amount: body.solAmount,
-        distribution_weights: body.weights,
-        wallet_address: body.walletAddress,
-        status: 'pending',
-        created_at: new Date().toISOString()
-      }])
-      .select()
+    // // Insert into Supabase
+    // const { data, error } = await supabase
+    //   .from('drops')
+    //   .insert([{
+    //     contract_address: body.contractAddress,
+    //     token_name: body.coinName,
+    //     token_ticker: body.coinTicker,
+    //     airdrop_amount: body.airdropAmount,
+    //     sol_amount: body.solAmount,
+    //     distribution_weights: body.weights,
+    //     wallet_address: body.walletAddress,
+    //     status: 'pending',
+    //     created_at: new Date().toISOString()
+    //   }])
+    //   .select()
 
-    if (error) throw error
+    // if (error) throw error
 
-    return NextResponse.json({ data }, { headers })
+    return NextResponse.json({ data: [] }, { headers })
 
   } catch (error) {
     console.error('Error creating drop:', error)
