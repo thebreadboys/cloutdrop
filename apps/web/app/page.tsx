@@ -80,6 +80,56 @@ export default function LandingPage() {
         </div>
 
         <div className="container py-12 md:py-24">
+          <h2 className="text-3xl font-bold text-center bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent mb-12">
+            Supported Chains
+          </h2>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 max-w-4xl mx-auto">
+            {[
+              {
+                name: "Solana",
+                logo: "/chains/solana.svg",
+                status: "live",
+              },
+              {
+                name: "BNB Chain",
+                logo: "/chains/bnb.svg",
+                status: "live",
+              },
+              {
+                name: "Ethereum",
+                logo: "/chains/eth.svg",
+                status: "coming-soon",
+              },
+              {
+                name: "Avalanche",
+                logo: "/chains/avax.svg",
+                status: "coming-soon",
+              },
+            ].map((chain) => (
+              <div
+                key={chain.name}
+                className="relative flex flex-col items-center p-6 rounded-lg border border-blue-500/20 bg-blue-500/[0.02]"
+              >
+                <div className="w-16 h-16 mb-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={chain.logo} alt={chain.name} className="w-full h-full object-contain" />
+                </div>
+                <h3 className="font-bold text-lg">{chain.name}</h3>
+                <span
+                  className={`mt-2 px-3 py-1 rounded-full text-xs font-medium ${
+                    chain.status === "live"
+                      ? "bg-green-500/10 text-green-500"
+                      : "bg-yellow-500/10 text-yellow-500"
+                  }`}
+                >
+                  {chain.status === "live" ? "Live" : "Coming Soon"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="container py-12 md:py-24">
           <h2 className="text-3xl font-bold text-center bg-gradient-to-b from-foreground to-foreground/80 bg-clip-text text-transparent py-12">
             How Cloutdrop Works
           </h2>

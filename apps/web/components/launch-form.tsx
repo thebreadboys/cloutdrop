@@ -68,6 +68,20 @@ const ERC20_ABI = [
   "function decimals() view returns (uint8)",
 ]
 
+// Add chain icons and configuration
+const CHAIN_CONFIG = {
+  SOLANA: {
+    name: 'Solana',
+    icon: '/chains/solana.svg',
+    className: 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+  },
+  BSC: {
+    name: 'BNB Chain',
+    icon: '/chains/bnb.svg',
+    className: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+  }
+} as const;
+
 const getWorkingConnection = async (): Promise<Connection> => {
   for (const endpoint of RPC_ENDPOINTS) {
     try {
@@ -246,7 +260,7 @@ declare global {
   interface Window {
     ethereum?: {
       isMetaMask?: boolean;
-      request: (args: { method: string; params?: any[] }) => Promise<any>;
+      request?: (args: { method: string; params?: any[] }) => Promise<any>;
       on?: (...args: any[]) => void;
       removeListener?: (...args: any[]) => void;
     };
@@ -259,15 +273,15 @@ export function LaunchForm() {
     contractAddress: "",
     coinName: "",
     coinTicker: "",
-    airdropAmount: "",
-    solAmount: "",
+    tokenAmount: "",
+    usdAmount: "",
     weights: {
       influencer: 33,
       community: 33,
       whale: 34,
     },
   })
-  const [isEnteringSol, setIsEnteringSol] = useState(false)
+  const [isEnteringUsd, setIsEnteringUsd] = useState(false)
   const [exchangeRate, setExchangeRate] = useState(0.01)
   const [isLoading, setIsLoading] = useState(false)
   const [isValidated, setIsValidated] = useState(false)
@@ -310,10 +324,10 @@ export function LaunchForm() {
     }
   }
 
-  const convertAmount = (amount: string, fromSol: boolean) => {
+  const convertAmount = (amount: string, fromUsd: boolean) => {
     const numAmount = Number.parseFloat(amount)
     if (isNaN(numAmount)) return ""
-    return fromSol ? (numAmount / exchangeRate).toFixed(2) : (numAmount * exchangeRate).toFixed(2)
+    return fromUsd ? (numAmount / exchangeRate).toFixed(2) : (numAmount * exchangeRate).toFixed(2)
   }
 
   const updateFormData = async (field: string, value: string) => {
@@ -332,20 +346,20 @@ export function LaunchForm() {
       }
     }
 
-    if (field === "airdropAmount" || field === "solAmount") {
-      const otherField = field === "airdropAmount" ? "solAmount" : "airdropAmount"
-      const convertedAmount = convertAmount(value, field === "solAmount")
+    if (field === "tokenAmount" || field === "usdAmount") {
+      const otherField = field === "tokenAmount" ? "usdAmount" : "tokenAmount"
+      const convertedAmount = convertAmount(value, field === "usdAmount")
       setFormData((prev) => ({ ...prev, [otherField]: convertedAmount }))
     }
   }
 
   const toggleInputMode = () => {
-    setIsEnteringSol(!isEnteringSol)
+    setIsEnteringUsd(!isEnteringUsd)
     // Swap the values when toggling
     setFormData((prev) => ({
       ...prev,
-      airdropAmount: prev.solAmount,
-      solAmount: prev.airdropAmount,
+      tokenAmount: prev.usdAmount,
+      usdAmount: prev.tokenAmount,
     }))
   }
 
@@ -431,7 +445,7 @@ export function LaunchForm() {
         throw new Error("Token contract address is required")
       }
 
-      if (!formData.airdropAmount || parseFloat(formData.airdropAmount) <= 0) {
+      if (!formData.tokenAmount || parseFloat(formData.tokenAmount) <= 0) {
         throw new Error("Invalid transfer amount")
       }
 
@@ -439,7 +453,7 @@ export function LaunchForm() {
         from: publicKey.toString(),
         to: destinationWallet,
         tokenMint: formData.contractAddress,
-        amount: formData.airdropAmount
+        amount: formData.tokenAmount
       })
 
       // Get a working connection
@@ -499,7 +513,7 @@ export function LaunchForm() {
           senderATA,
           destinationATA,
           publicKey,
-          Math.round(parseFloat(formData.airdropAmount) * Math.pow(10, 9))
+          Math.round(parseFloat(formData.tokenAmount) * Math.pow(10, 9))
         );
 
         transaction.add(transferInstruction);
@@ -700,48 +714,68 @@ export function LaunchForm() {
                     transition={{ duration: 0.3 }}
                     className="space-y-6"
                   >
-                    <div className="flex items-center space-x-4 bg-card p-4 rounded-lg shadow-sm">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
-                        {formData.coinTicker.slice(0, 2)}
+                    <div className="flex items-center justify-between bg-card p-4 rounded-lg shadow-sm">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
+                          {formData.coinTicker.slice(0, 2)}
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-lg">{formData.coinName}</h3>
+                          <p className="text-sm text-muted-foreground">{formData.coinTicker}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-lg">{formData.coinName}</h3>
-                        <p className="text-sm text-muted-foreground">{formData.coinTicker}</p>
-                      </div>
+                      {chainType && (
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img 
+                              src={chainType === 'SOLANA' ? CHAIN_CONFIG.SOLANA.icon : CHAIN_CONFIG.BSC.icon} 
+                              alt={chainType === 'SOLANA' ? 'Solana' : 'BSC'} 
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+                          <span className={cn(
+                            "text-sm",
+                            chainType === 'SOLANA' ? CHAIN_CONFIG.SOLANA.className : CHAIN_CONFIG.BSC.className
+                          )}>
+                            {chainType === 'SOLANA' ? 'Solana Chain' : 'BSC Chain'}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="airdropAmount" className="text-base font-medium">
+                        <Label htmlFor="tokenAmount" className="text-base font-medium">
                           Airdrop Amount
                         </Label>
                         <div className="flex items-center space-x-2">
                           <span className="text-sm font-medium">{formData.coinTicker}</span>
-                          <Switch checked={isEnteringSol} onCheckedChange={toggleInputMode} />
-                          <span className="text-sm font-medium">SOL</span>
+                          <Switch checked={isEnteringUsd} onCheckedChange={toggleInputMode} />
+                          <span className="text-sm font-medium">USD</span>
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="relative flex-grow">
                           <Input
-                            id="airdropAmount"
-                            placeholder={`Enter amount in ${isEnteringSol ? "SOL" : formData.coinTicker}`}
-                            value={isEnteringSol ? formData.solAmount : formData.airdropAmount}
+                            id="tokenAmount"
+                            placeholder={`Enter amount in ${isEnteringUsd ? "USD" : formData.coinTicker}`}
+                            value={isEnteringUsd ? formData.usdAmount : formData.tokenAmount}
                             onChange={(e) =>
-                              updateFormData(isEnteringSol ? "solAmount" : "airdropAmount", e.target.value)
+                              updateFormData(isEnteringUsd ? "usdAmount" : "tokenAmount", e.target.value)
                             }
                             className="pr-20"
                           />
                           <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                             <span className="text-sm font-medium text-muted-foreground">
-                              {isEnteringSol ? "SOL" : formData.coinTicker}
+                              {isEnteringUsd ? "USD" : formData.coinTicker}
                             </span>
                           </div>
                         </div>
                       </div>
                       <div className="text-sm text-right text-muted-foreground">
-                        ≈ {isEnteringSol ? formData.airdropAmount : formData.solAmount}{" "}
-                        {isEnteringSol ? formData.coinTicker : "SOL"}
+                        ≈ {isEnteringUsd ? formData.tokenAmount : formData.usdAmount}{" "}
+                        {isEnteringUsd ? formData.coinTicker : "USD"}
                       </div>
                     </div>
                   </motion.div>
@@ -818,7 +852,7 @@ export function LaunchForm() {
                 <div className="flex justify-between">
                   <span className="font-medium">Amount:</span>
                   <span>
-                    {formData.airdropAmount} {formData.coinTicker} (≈ {formData.solAmount} SOL)
+                    {formData.tokenAmount} {formData.coinTicker} (≈ {formData.usdAmount} USD)
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -865,17 +899,6 @@ export function LaunchForm() {
           {step === STEPS.length - 1 ? "Launch Airdrop" : "Continue"}
         </Button>
       </div>
-
-      {/* Chain detection status */}
-      {isValidated && chainType && (
-        <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-md text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full" />
-            <span className="font-medium">Network:</span>
-            <span>{chainType === 'BSC' ? 'Binance Smart Chain' : 'Solana'}</span>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
