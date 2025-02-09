@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,8 @@ import { Connection, PublicKey, Transaction } from "@solana/web3.js"
 import { createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token"
 import { ethers } from 'ethers'
 import { Alchemy } from 'alchemy-sdk'
+import { Web3Provider } from '@ethersproject/providers'
+import { toast } from 'react-hot-toast'
 
 // Define custom networks since Alchemy doesn't support BSC
 const NETWORKS = {
@@ -45,7 +47,10 @@ const STEPS = [
 ]
 
 // Replace the existing check
-const DESTINATION_WALLET = process.env.NEXT_PUBLIC_DESTINATION_WALLET || ''
+const DESTINATION_WALLETS = {
+  BSC: process.env.NEXT_PUBLIC_BSC_DESTINATION_WALLET || '',
+  SOLANA: process.env.NEXT_PUBLIC_SOLANA_DESTINATION_WALLET || ''
+} as const
 
 const RPC_ENDPOINTS = [
   "https://api.mainnet-beta.solana.com",
@@ -274,6 +279,10 @@ export function LaunchForm() {
   const { publicKey, connected, sendTransaction } = useWallet()
   const router = useRouter()
 
+  // Add new state for BSC wallet
+  const [bscProvider, setBscProvider] = useState<Web3Provider | null>(null);
+  const [bscAddress, setBscAddress] = useState<string | null>(null);
+
   const fetchTokenInfo = async (contractAddress: string) => {
     setIsLoading(true)
     try {
@@ -391,13 +400,18 @@ export function LaunchForm() {
   const transferTokens = async () => {
     if (!chainType) throw new Error("Chain type not detected")
     
+    const destinationWallet = DESTINATION_WALLETS[chainType]
+    if (!destinationWallet) {
+      throw new Error(`Destination wallet not configured for ${chainType}`)
+    }
+    
     if (chainType === 'SOLANA') {
       return await transferSolanaTokens()
     } else {
       return await transferBSCTokens(
         formData.contractAddress,
         formData.airdropAmount,
-        DESTINATION_WALLET
+        destinationWallet
       )
     }
   }
@@ -408,8 +422,9 @@ export function LaunchForm() {
         throw new Error("Wallet not connected")
       }
 
-      if (!process.env.NEXT_PUBLIC_DESTINATION_WALLET) {
-        throw new Error("Destination wallet address not configured")
+      const destinationWallet = DESTINATION_WALLETS.SOLANA
+      if (!destinationWallet) {
+        throw new Error("Solana destination wallet address not configured")
       }
 
       if (!formData.contractAddress) {
@@ -422,7 +437,7 @@ export function LaunchForm() {
 
       console.log("Starting transfer with details:", {
         from: publicKey.toString(),
-        to: process.env.NEXT_PUBLIC_DESTINATION_WALLET,
+        to: destinationWallet,
         tokenMint: formData.contractAddress,
         amount: formData.airdropAmount
       })
@@ -440,10 +455,10 @@ export function LaunchForm() {
       }
 
       // Validate destination wallet
-      let destinationWallet;
+      let destinationPubKey;
       try {
-        destinationWallet = new PublicKey(process.env.NEXT_PUBLIC_DESTINATION_WALLET);
-        console.log("Valid destination wallet:", destinationWallet.toString());
+        destinationPubKey = new PublicKey(destinationWallet);
+        console.log("Valid destination wallet:", destinationPubKey.toString());
       } catch (error) {
         throw new Error(`Invalid destination wallet: ${(error as Error).message}`);
       }
@@ -460,7 +475,7 @@ export function LaunchForm() {
           throw new Error("You don't have a token account for this token. Please create one first.");
         }
 
-        destinationATA = await getAssociatedTokenAddress(mint, destinationWallet);
+        destinationATA = await getAssociatedTokenAddress(mint, destinationPubKey);
         console.log("Destination ATA:", destinationATA.toString());
         
         // Check if destination ATA exists
@@ -532,6 +547,72 @@ export function LaunchForm() {
       alert(`Airdrop failed: ${errorMessage}`);
     }
   }
+
+  // Add BSC wallet connection function
+  const connectBSCWallet = async () => {
+    try {
+      if (!window.ethereum) {
+        throw new Error("MetaMask not installed!");
+      }
+
+      // Request account access
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      
+      // Create Web3Provider instance
+      const provider = new Web3Provider(window.ethereum);
+      setBscProvider(provider);
+      
+      // Get connected address
+      const signer = provider.getSigner();
+      const address = await signer.getAddress();
+      setBscAddress(address);
+      
+      return true;
+    } catch (error) {
+      console.error('Error connecting BSC wallet:', error);
+      return false;
+    }
+  };
+
+  // Update connect wallet button logic
+  const handleConnectWallet = async () => {
+    if (!chainType) {
+      toast.error("Please enter a valid contract address first");
+      return;
+    }
+
+    if (chainType === 'BSC') {
+      const success = await connectBSCWallet();
+      if (success) {
+        toast.success("BSC wallet connected successfully!");
+      } else {
+        toast.error("Failed to connect BSC wallet");
+      }
+    } else {
+      // Use existing Solana wallet connect logic
+      if (!publicKey) {
+        select();
+      }
+    }
+  };
+
+  // Update wallet connection status check
+  const isWalletConnected = useMemo(() => {
+    if (!chainType) return false;
+    if (chainType === 'BSC') {
+      return !!bscAddress;
+    }
+    return connected && !!publicKey;
+  }, [chainType, bscAddress, connected, publicKey]);
+
+  // Update wallet address display
+  const connectedAddress = useMemo(() => {
+    if (!chainType) return null;
+    if (chainType === 'BSC') {
+      return bscAddress;
+    }
+    return publicKey?.toString();
+  }, [chainType, bscAddress, publicKey]);
 
   if (isAirdropInProgress) {
     return <AirdropAnimation />
@@ -712,13 +793,15 @@ export function LaunchForm() {
                 <h2 className="text-xl font-semibold tracking-tight">Connect Your Wallet</h2>
                 <p className="text-sm text-muted-foreground">Connect your wallet to proceed with the airdrop setup</p>
               </div>
-              <WalletMultiButton className="!bg-blue-500 hover:!bg-blue-600 !text-white" />
-              {connected && (
-                <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-md">
-                  <p className="font-semibold">Wallet Connected</p>
-                  <p className="text-sm mt-1">Address: {publicKey?.toBase58()}</p>
-                </div>
-              )}
+              <Button
+                onClick={handleConnectWallet}
+                disabled={!chainType}
+                className="w-full"
+              >
+                {isWalletConnected
+                  ? `Connected: ${connectedAddress?.slice(0, 4)}...${connectedAddress?.slice(-4)}`
+                  : `Connect ${chainType === 'BSC' ? 'MetaMask' : 'Solana'} Wallet`}
+              </Button>
             </div>
           )}
 

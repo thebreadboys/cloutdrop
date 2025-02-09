@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ethersproject/providers": "^5.7.2",
     "@radix-ui/react-accordion": "^1.2.3",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-aspect-ratio": "^1.1.2",
@@ -62,6 +63,7 @@
     "react-day-picker": "^9.5.1",
     "react-dom": "18.2.0",
     "react-hook-form": "^7.54.2",
+    "react-hot-toast": "^2.5.1",
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.1",
     "sonner": "^1.7.4",
