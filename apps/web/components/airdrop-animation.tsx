@@ -22,7 +22,7 @@ export function AirdropAnimation() {
         animate={{ opacity: [0, 1, 0] }}
         transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
       >
-        Airdrop in Progress
+        Setting up Airdrop
       </motion.h2>
       <p className="text-muted-foreground">Please wait while we process your airdrop...</p>
     </div>

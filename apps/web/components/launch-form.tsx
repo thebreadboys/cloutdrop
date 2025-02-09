@@ -62,9 +62,15 @@ export function LaunchForm() {
   const [isAirdropInProgress, setIsAirdropInProgress] = useState(false)
   const [isAirdropComplete, setIsAirdropComplete] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
+  const [betaCode, setBetaCode] = useState("")
+  const [hasBetaAccess, setHasBetaAccess] = useState(false)
+  const [betaError, setBetaError] = useState("")
 
   const { publicKey, connected } = useWallet()
   const router = useRouter()
+
+  // Base64 encoded version of "SAVETHEORANGUTANS"
+  const ENCODED_BETA_CODE = "U0FWRVRIRU9SQU5HVVRBTlM="
 
   const fetchTokenInfo = async (contractAddress: string) => {
     setIsLoading(true)
@@ -207,6 +213,12 @@ export function LaunchForm() {
 
   const initiateAirdrop = async () => {
     setIsAirdropInProgress(true)
+    // Store token info in localStorage
+    localStorage.setItem('tokenInfo', JSON.stringify({
+      contractAddress: formData.contractAddress,
+      coinName: formData.coinName,
+      coinTicker: formData.coinTicker,
+    }))
     // Simulate airdrop process
     await new Promise((resolve) => setTimeout(resolve, 5000))
     setIsAirdropInProgress(false)
@@ -217,6 +229,17 @@ export function LaunchForm() {
     }, 2000)
   }
 
+  const validateBetaCode = () => {
+    // Convert input to base64 for comparison
+    const encodedInput = btoa(betaCode.trim().toUpperCase())
+    if (encodedInput === ENCODED_BETA_CODE) {
+      setHasBetaAccess(true)
+      setBetaError("")
+    } else {
+      setBetaError("Invalid beta code. Please try again or request access.")
+    }
+  }
+
   if (isAirdropInProgress) {
     return <AirdropAnimation />
   }
@@ -225,8 +248,8 @@ export function LaunchForm() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <CheckCircle2 className="w-16 h-16 text-green-500" />
-        <h2 className="text-2xl font-bold">Airdrop Complete!</h2>
-        <p className="text-muted-foreground">Redirecting to analytics...</p>
+        <h2 className="text-2xl font-bold">Airdrop Setup Complete!</h2>
+        <p className="text-muted-foreground">Token distribution will begin shortly...</p>
       </div>
     )
   }
@@ -394,19 +417,71 @@ export function LaunchForm() {
 
           {step === 2 && (
             <div className="flex flex-col items-center justify-center py-12 space-y-6 text-center">
-              <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                <Wallet className="h-6 w-6 text-blue-500" />
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-xl font-semibold tracking-tight">Connect Your Wallet</h2>
-                <p className="text-sm text-muted-foreground">Connect your wallet to proceed with the airdrop setup</p>
-              </div>
-              <WalletMultiButton className="!bg-blue-500 hover:!bg-blue-600 !text-white" />
-              {connected && (
-                <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-md">
-                  <p className="font-semibold">Wallet Connected</p>
-                  <p className="text-sm mt-1">Address: {publicKey?.toBase58()}</p>
+              {!hasBetaAccess ? (
+                <div className="space-y-6 w-full max-w-md">
+                  <div className="h-12 w-12 mx-auto rounded-full bg-blue-500/10 flex items-center justify-center">
+                    <Wallet className="h-6 w-6 text-blue-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-xl font-semibold tracking-tight">Currently in Closed Beta</h2>
+                    <p className="text-sm text-muted-foreground">Enter your beta code to proceed or request access below</p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="Enter beta code"
+                        value={betaCode}
+                        onChange={(e) => {
+                          setBetaCode(e.target.value)
+                          setBetaError("")
+                        }}
+                        className="text-center"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            validateBetaCode()
+                          }
+                        }}
+                      />
+                      {betaError && (
+                        <p className="text-sm text-red-500 mt-1">{betaError}</p>
+                      )}
+                      <Button 
+                        onClick={validateBetaCode} 
+                        className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                      >
+                        Submit Code
+                      </Button>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Don't have a code?{" "}
+                      <a 
+                        href="https://forms.gle/r2NKqugHKPdrJciQ9" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:underline"
+                      >
+                        Request Access
+                      </a>
+                    </div>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
+                    <Wallet className="h-6 w-6 text-blue-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-xl font-semibold tracking-tight">Connect Your Wallet</h2>
+                    <p className="text-sm text-muted-foreground">Connect your wallet to proceed with the airdrop setup</p>
+                  </div>
+                  <WalletMultiButton className="!bg-blue-500 hover:!bg-blue-600 !text-white" />
+                  {connected && (
+                    <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-md">
+                      <p className="font-semibold">Wallet Connected</p>
+                      <p className="text-sm mt-1">Address: {publicKey?.toBase58()}</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
