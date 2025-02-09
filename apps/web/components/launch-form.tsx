@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
@@ -14,11 +14,18 @@ import { cn } from "@/lib/utils"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui"
 import { AirdropAnimation } from "@/components/airdrop-animation"
+import { Connection, PublicKey, Transaction } from "@solana/web3.js"
+import { createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token"
+import { ethers } from 'ethers'
+import { Alchemy } from 'alchemy-sdk'
+import { Web3Provider } from '@ethersproject/providers'
+import { toast } from 'react-hot-toast'
 
-const HELIUS_API_KEY = process.env.NEXT_PUBLIC_HELIUS_API_KEY
-if (!HELIUS_API_KEY) {
-  throw new Error("HELIUS_API_KEY is not set")
-}
+// Define custom networks since Alchemy doesn't support BSC
+const NETWORKS = {
+  SOL_MAINNET: 'mainnet-beta',
+  BSC_MAINNET: 'bsc-mainnet'
+} as const
 
 const STEPS = [
   {
@@ -39,91 +46,288 @@ const STEPS = [
   },
 ]
 
+// Replace the existing check
+const DESTINATION_WALLETS = {
+  BSC: process.env.NEXT_PUBLIC_BSC_DESTINATION_WALLET || '',
+  SOLANA: process.env.NEXT_PUBLIC_SOLANA_DESTINATION_WALLET || ''
+} as const
+
+const RPC_ENDPOINTS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://solana-api.projectserum.com",
+  "https://rpc.ankr.com/solana"
+];
+
+// Add BSC configuration
+const BSC_RPC = "https://bsc-dataseed.binance.org/"
+const BSC_CHAIN_ID = 56
+
+// Add token ABI for BSC transfers
+const ERC20_ABI = [
+  "function transfer(address to, uint256 amount) returns (bool)",
+  "function decimals() view returns (uint8)",
+]
+
+// Add chain icons and configuration
+const CHAIN_CONFIG = {
+  SOLANA: {
+    name: 'Solana',
+    icon: '/chains/solana.svg',
+    className: 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+  },
+  BSC: {
+    name: 'BNB Chain',
+    icon: '/chains/bnb.svg',
+    className: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+  }
+} as const;
+
+const getWorkingConnection = async (): Promise<Connection> => {
+  for (const endpoint of RPC_ENDPOINTS) {
+    try {
+      const connection = new Connection(endpoint, {
+        commitment: "finalized",
+        confirmTransactionInitialTimeout: 60000
+      });
+      await connection.getLatestBlockhash();
+      console.log(`Connected successfully to ${endpoint}`);
+      return connection;
+    } catch (error) {
+      console.warn(`Failed to connect to ${endpoint}`);
+      continue;
+    }
+  }
+  throw new Error("Unable to connect to any Solana RPC endpoint");
+};
+
+// Update the detectTokenChain function
+const detectTokenChain = async (contractAddress: string): Promise<'BSC' | 'SOLANA' | null> => {
+  try {
+    // Try to parse as Solana address
+    const solPubKey = new PublicKey(contractAddress);
+    // Verify if it's a valid Solana token
+    const connection = await getWorkingConnection();
+    const tokenInfo = await connection.getParsedAccountInfo(solPubKey);
+    if (tokenInfo) return 'SOLANA';
+  } catch (solError) {
+    // Not a valid Solana address, try BSC
+    try {
+      if (!ethers.isAddress(contractAddress)) throw new Error("Invalid BSC address");
+      
+      // Create a provider to check if the contract exists
+      const provider = new ethers.JsonRpcProvider(BSC_RPC);
+      const code = await provider.getCode(contractAddress);
+      
+      // If the address has code, it's a contract
+      if (code !== '0x') return 'BSC';
+
+    } catch (bscError) {
+      console.error("BSC validation error:", bscError);
+    }
+  }
+  
+  return null;
+};
+
+// Update the transferBSCTokens function with better error handling
+const transferBSCTokens = async (
+  contractAddress: string,
+  amount: string,
+  destinationAddress: string
+): Promise<boolean> => {
+  try {
+    if (!window.ethereum) {
+      throw new Error("MetaMask or similar wallet not found. Please install MetaMask to continue.");
+    }
+
+    // Connect to BSC
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    
+    // Request chain switch if needed
+    const network = await provider.getNetwork();
+    if (network.chainId !== BigInt(BSC_CHAIN_ID)) {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: `0x${BSC_CHAIN_ID.toString(16)}` }],
+        });
+      } catch (switchError: any) {
+        if (switchError.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: `0x${BSC_CHAIN_ID.toString(16)}`,
+              chainName: 'Binance Smart Chain',
+              nativeCurrency: {
+                name: 'BNB',
+                symbol: 'BNB',
+                decimals: 18
+              },
+              rpcUrls: [BSC_RPC],
+              blockExplorerUrls: ['https://bscscan.com/']
+            }]
+          });
+        } else {
+          throw new Error("Failed to switch to BSC network. Please switch manually in MetaMask.");
+        }
+      }
+    }
+
+    // Setup contract with error handling
+    const tokenContract = new ethers.Contract(contractAddress, ERC20_ABI, signer);
+    let decimals;
+    try {
+      decimals = await tokenContract.decimals();
+    } catch (error) {
+      throw new Error("Failed to get token decimals. Make sure this is a valid BEP-20 token.");
+    }
+
+    const amountBigInt = ethers.parseUnits(amount, decimals);
+
+    // Send transaction with proper error handling
+    try {
+      const tx = await tokenContract.transfer(destinationAddress, amountBigInt);
+      const receipt = await tx.wait();
+      
+      if (!receipt.status) {
+        throw new Error("Transaction failed. Please check your balance and try again.");
+      }
+      
+      return true;
+    } catch (error: any) {
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+        throw new Error("Insufficient funds to complete the transaction.");
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error("BSC transfer error:", error);
+    throw error;
+  }
+};
+
+// Add these helper functions after the transferBSCTokens function
+const fetchSolanaTokenInfo = async (contractAddress: string) => {
+  try {
+    const connection = await getWorkingConnection();
+    const mint = new PublicKey(contractAddress);
+    
+    // You can expand this to fetch more token info using Helius or other APIs
+    return {
+      name: "Solana Token", // Replace with actual token name fetch
+      ticker: "SOL", // Replace with actual token ticker fetch
+      exchangeRate: 0.01 // Replace with actual exchange rate fetch
+    };
+  } catch (error) {
+    console.error("Error fetching Solana token info:", error);
+    throw error;
+  }
+};
+
+const fetchBSCTokenInfo = async (contractAddress: string) => {
+  try {
+    const provider = new ethers.JsonRpcProvider(BSC_RPC);
+    const tokenContract = new ethers.Contract(
+      contractAddress,
+      [
+        "function name() view returns (string)",
+        "function symbol() view returns (string)",
+        ...ERC20_ABI
+      ],
+      provider
+    );
+
+    const [name, symbol] = await Promise.all([
+      tokenContract.name(),
+      tokenContract.symbol()
+    ]);
+
+    // You can add price fetching logic here using BSC APIs
+    return {
+      name,
+      ticker: symbol,
+      exchangeRate: 0.01 // Replace with actual exchange rate fetch
+    };
+  } catch (error) {
+    console.error("Error fetching BSC token info:", error);
+    throw error;
+  }
+};
+
+// Update the window.ethereum type declaration
+declare global {
+  interface Window {
+    ethereum?: {
+      isMetaMask?: boolean;
+      request?: (args: { method: string; params?: any[] }) => Promise<any>;
+      on?: (...args: any[]) => void;
+      removeListener?: (...args: any[]) => void;
+    };
+  }
+}
+
 export function LaunchForm() {
   const [step, setStep] = useState(0)
   const [formData, setFormData] = useState({
     contractAddress: "",
     coinName: "",
     coinTicker: "",
-    airdropAmount: "",
-    solAmount: "",
+    tokenAmount: "",
+    usdAmount: "",
     weights: {
       influencer: 33,
       community: 33,
       whale: 34,
     },
-    image: "",
-    description: "",
   })
-  const [isEnteringSol, setIsEnteringSol] = useState(false)
+  const [isEnteringUsd, setIsEnteringUsd] = useState(false)
   const [exchangeRate, setExchangeRate] = useState(0.01)
   const [isLoading, setIsLoading] = useState(false)
   const [isValidated, setIsValidated] = useState(false)
   const [isAirdropInProgress, setIsAirdropInProgress] = useState(false)
   const [isAirdropComplete, setIsAirdropComplete] = useState(false)
-  const [errorMessage, setErrorMessage] = useState("")
-  const [betaCode, setBetaCode] = useState("")
-  const [hasBetaAccess, setHasBetaAccess] = useState(false)
-  const [betaError, setBetaError] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [chainType, setChainType] = useState<'BSC' | 'SOLANA' | null>(null)
 
-  const { publicKey, connected } = useWallet()
+  const { publicKey, connected, sendTransaction } = useWallet()
   const router = useRouter()
 
-  // Base64 encoded version of "SAVETHEORANGUTANS"
-  const ENCODED_BETA_CODE = "U0FWRVRIRU9SQU5HVVRBTlM="
+  // Add new state for BSC wallet
+  const [bscProvider, setBscProvider] = useState<Web3Provider | null>(null);
+  const [bscAddress, setBscAddress] = useState<string | null>(null);
 
   const fetchTokenInfo = async (contractAddress: string) => {
     setIsLoading(true)
-    setErrorMessage("") // Reset error message
     try {
-      const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'my-id',
-          method: 'getAsset',
-          params: {
-            id: contractAddress,
-            displayOptions: {
-              showFungible: true, // Return details about a fungible token
-            },
-          },
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Token not found")
+      const detectedChain = await detectTokenChain(contractAddress)
+      if (!detectedChain) {
+        throw new Error("Invalid token contract address")
       }
-
-      const { result } = await response.json()
-      const tokenInfo = {
-        name: result.content?.metadata?.name || "Unknown",
-        ticker: result.content?.metadata?.symbol || "N/A",
-        description: result.content?.metadata?.description || "No description available",
-        exchangeRate: result.token_info?.price_info?.price_per_token || 0, // Default to 0 if not available
-        image: result.content?.files?.[0]?.uri || result.content?.links?.image || "", // Use the image URI
-      }
-
+      
+      setChainType(detectedChain)
+      
+      // Get token info based on chain
+      const tokenInfo = detectedChain === 'SOLANA' 
+        ? await fetchSolanaTokenInfo(contractAddress)
+        : await fetchBSCTokenInfo(contractAddress)
+      
       setExchangeRate(tokenInfo.exchangeRate)
       setIsValidated(true)
       return tokenInfo
     } catch (error) {
-      const err = error as Error;
-      console.error("Error fetching token info:", err);
-      setErrorMessage(err.message);
-      setIsValidated(false);
+      console.error("Token fetch error:", error)
+      setIsValidated(false)
+      throw error
     } finally {
       setIsLoading(false)
     }
   }
 
-  const convertAmount = (amount: string, fromSol: boolean) => {
+  const convertAmount = (amount: string, fromUsd: boolean) => {
     const numAmount = Number.parseFloat(amount)
     if (isNaN(numAmount)) return ""
-    return fromSol ? (numAmount / exchangeRate).toFixed(2) : (numAmount * exchangeRate).toFixed(2)
+    return fromUsd ? (numAmount / exchangeRate).toFixed(2) : (numAmount * exchangeRate).toFixed(2)
   }
 
   const updateFormData = async (field: string, value: string) => {
@@ -132,34 +336,30 @@ export function LaunchForm() {
     if (field === "contractAddress") {
       if (value.length > 0) {
         const tokenInfo = await fetchTokenInfo(value)
-        if (tokenInfo) {
-          setFormData((prev) => ({
-            ...prev,
-            coinName: tokenInfo.name,
-            coinTicker: tokenInfo.ticker,
-            image: tokenInfo.image,
-            description: tokenInfo.description,
-          }))
-        }
+        setFormData((prev) => ({
+          ...prev,
+          coinName: tokenInfo.name,
+          coinTicker: tokenInfo.ticker,
+        }))
       } else {
         setIsValidated(false)
       }
     }
 
-    if (field === "airdropAmount" || field === "solAmount") {
-      const otherField = field === "airdropAmount" ? "solAmount" : "airdropAmount"
-      const convertedAmount = convertAmount(value, field === "solAmount")
+    if (field === "tokenAmount" || field === "usdAmount") {
+      const otherField = field === "tokenAmount" ? "usdAmount" : "tokenAmount"
+      const convertedAmount = convertAmount(value, field === "usdAmount")
       setFormData((prev) => ({ ...prev, [otherField]: convertedAmount }))
     }
   }
 
   const toggleInputMode = () => {
-    setIsEnteringSol(!isEnteringSol)
+    setIsEnteringUsd(!isEnteringUsd)
     // Swap the values when toggling
     setFormData((prev) => ({
       ...prev,
-      airdropAmount: prev.solAmount,
-      solAmount: prev.airdropAmount,
+      tokenAmount: prev.usdAmount,
+      usdAmount: prev.tokenAmount,
     }))
   }
 
@@ -211,34 +411,222 @@ export function LaunchForm() {
     }
   }
 
-  const initiateAirdrop = async () => {
-    setIsAirdropInProgress(true)
-    // Store token info in localStorage
-    localStorage.setItem('tokenInfo', JSON.stringify({
-      contractAddress: formData.contractAddress,
-      coinName: formData.coinName,
-      coinTicker: formData.coinTicker,
-    }))
-    // Simulate airdrop process
-    await new Promise((resolve) => setTimeout(resolve, 5000))
-    setIsAirdropInProgress(false)
-    setIsAirdropComplete(true)
-    // Navigate to analytics page after a short delay
-    setTimeout(() => {
-      router.push("/analytics")
-    }, 2000)
-  }
-
-  const validateBetaCode = () => {
-    // Convert input to base64 for comparison
-    const encodedInput = btoa(betaCode.trim().toUpperCase())
-    if (encodedInput === ENCODED_BETA_CODE) {
-      setHasBetaAccess(true)
-      setBetaError("")
+  const transferTokens = async () => {
+    if (!chainType) throw new Error("Chain type not detected")
+    
+    const destinationWallet = DESTINATION_WALLETS[chainType]
+    if (!destinationWallet) {
+      throw new Error(`Destination wallet not configured for ${chainType}`)
+    }
+    
+    if (chainType === 'SOLANA') {
+      return await transferSolanaTokens()
     } else {
-      setBetaError("Invalid beta code. Please try again or request access.")
+      return await transferBSCTokens(
+        formData.contractAddress,
+        formData.airdropAmount,
+        destinationWallet
+      )
     }
   }
+
+  const transferSolanaTokens = async () => {
+    try {
+      if (!publicKey || !connected) {
+        throw new Error("Wallet not connected")
+      }
+
+      const destinationWallet = DESTINATION_WALLETS.SOLANA
+      if (!destinationWallet) {
+        throw new Error("Solana destination wallet address not configured")
+      }
+
+      if (!formData.contractAddress) {
+        throw new Error("Token contract address is required")
+      }
+
+      if (!formData.tokenAmount || parseFloat(formData.tokenAmount) <= 0) {
+        throw new Error("Invalid transfer amount")
+      }
+
+      console.log("Starting transfer with details:", {
+        from: publicKey.toString(),
+        to: destinationWallet,
+        tokenMint: formData.contractAddress,
+        amount: formData.tokenAmount
+      })
+
+      // Get a working connection
+      const connection = await getWorkingConnection();
+      
+      // Get the token mint from the contract address
+      let mint;
+      try {
+        mint = new PublicKey(formData.contractAddress);
+        console.log("Valid mint address:", mint.toString());
+      } catch (error) {
+        throw new Error(`Invalid token address: ${(error as Error).message}`);
+      }
+
+      // Validate destination wallet
+      let destinationPubKey;
+      try {
+        destinationPubKey = new PublicKey(destinationWallet);
+        console.log("Valid destination wallet:", destinationPubKey.toString());
+      } catch (error) {
+        throw new Error(`Invalid destination wallet: ${(error as Error).message}`);
+      }
+
+      // Get ATAs with error handling
+      let senderATA, destinationATA;
+      try {
+        senderATA = await getAssociatedTokenAddress(mint, publicKey);
+        console.log("Sender ATA:", senderATA.toString());
+        
+        // Check if sender ATA exists
+        const senderAccount = await connection.getAccountInfo(senderATA);
+        if (!senderAccount) {
+          throw new Error("You don't have a token account for this token. Please create one first.");
+        }
+
+        destinationATA = await getAssociatedTokenAddress(mint, destinationPubKey);
+        console.log("Destination ATA:", destinationATA.toString());
+        
+        // Check if destination ATA exists
+        const destAccount = await connection.getAccountInfo(destinationATA);
+        if (!destAccount) {
+          throw new Error("Destination token account doesn't exist. Please create it first.");
+        }
+      } catch (error) {
+        console.error("ATA error details:", error);
+        throw new Error(`Token account error: ${(error as Error).message}`);
+      }
+
+      // Create and send transaction with detailed error handling
+      try {
+        const transaction = new Transaction();
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = publicKey;
+
+        const transferInstruction = createTransferInstruction(
+          senderATA,
+          destinationATA,
+          publicKey,
+          Math.round(parseFloat(formData.tokenAmount) * Math.pow(10, 9))
+        );
+
+        transaction.add(transferInstruction);
+        
+        console.log("Sending transaction...");
+        const signature = await sendTransaction(transaction, connection);
+        console.log("Transaction sent, signature:", signature);
+        
+        console.log("Confirming transaction...");
+        await connection.confirmTransaction(signature, "confirmed");
+        console.log("Transaction confirmed!");
+        
+        return true;
+      } catch (error) {
+        console.error("Transaction error details:", error);
+        throw new Error(`Transaction failed: ${(error as Error).message}`);
+      }
+    } catch (error) {
+      console.error("Full error details:", error);
+      throw error;
+    }
+  }
+
+  const initiateAirdrop = async () => {
+    try {
+      setError(null); // Clear any previous errors
+      console.log("Starting airdrop process...");
+      setIsAirdropInProgress(true);
+      
+      await transferTokens();
+      
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      setIsAirdropInProgress(false);
+      setIsAirdropComplete(true);
+      
+      setTimeout(() => {
+        router.push("/analytics");
+      }, 2000);
+    } catch (error) {
+      setIsAirdropInProgress(false);
+      setIsAirdropComplete(false);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      console.error("Airdrop failed:", errorMessage);
+      setError(errorMessage);
+      alert(`Airdrop failed: ${errorMessage}`);
+    }
+  }
+
+  // Add BSC wallet connection function
+  const connectBSCWallet = async () => {
+    try {
+      if (!window.ethereum) {
+        throw new Error("MetaMask not installed!");
+      }
+
+      // Request account access
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      
+      // Create Web3Provider instance
+      const provider = new Web3Provider(window.ethereum);
+      setBscProvider(provider);
+      
+      // Get connected address
+      const signer = provider.getSigner();
+      const address = await signer.getAddress();
+      setBscAddress(address);
+      
+      return true;
+    } catch (error) {
+      console.error('Error connecting BSC wallet:', error);
+      return false;
+    }
+  };
+
+  // Update connect wallet button logic
+  const handleConnectWallet = async () => {
+    if (!chainType) {
+      toast.error("Please enter a valid contract address first");
+      return;
+    }
+
+    if (chainType === 'BSC') {
+      const success = await connectBSCWallet();
+      if (success) {
+        toast.success("BSC wallet connected successfully!");
+      } else {
+        toast.error("Failed to connect BSC wallet");
+      }
+    } else {
+      // Use existing Solana wallet connect logic
+      if (!publicKey) {
+        select();
+      }
+    }
+  };
+
+  // Update wallet connection status check
+  const isWalletConnected = useMemo(() => {
+    if (!chainType) return false;
+    if (chainType === 'BSC') {
+      return !!bscAddress;
+    }
+    return connected && !!publicKey;
+  }, [chainType, bscAddress, connected, publicKey]);
+
+  // Update wallet address display
+  const connectedAddress = useMemo(() => {
+    if (!chainType) return null;
+    if (chainType === 'BSC') {
+      return bscAddress;
+    }
+    return publicKey?.toString();
+  }, [chainType, bscAddress, publicKey]);
 
   if (isAirdropInProgress) {
     return <AirdropAnimation />
@@ -248,14 +636,20 @@ export function LaunchForm() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <CheckCircle2 className="w-16 h-16 text-green-500" />
-        <h2 className="text-2xl font-bold">Airdrop Setup Complete!</h2>
-        <p className="text-muted-foreground">Token distribution will begin shortly...</p>
+        <h2 className="text-2xl font-bold">Airdrop Complete!</h2>
+        <p className="text-muted-foreground">Redirecting to analytics...</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-8 max-w-2xl mx-auto">
+      {error && (
+        <div className="p-4 bg-red-100 text-red-800 rounded-md">
+          <p className="font-semibold">Error:</p>
+          <p>{error}</p>
+        </div>
+      )}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Launch Your Airdrop</h1>
         <p className="text-muted-foreground">Complete the steps below to set up your airdrop campaign.</p>
@@ -320,64 +714,73 @@ export function LaunchForm() {
                     transition={{ duration: 0.3 }}
                     className="space-y-6"
                   >
-                    <div className="flex items-center space-x-4 bg-card p-4 rounded-lg shadow-sm">
-                      {formData.image ? (
-                        <img src={formData.image} alt={`${formData.coinName} logo`} className="w-12 h-12 rounded-full" />
-                      ) : (
+                    <div className="flex items-center justify-between bg-card p-4 rounded-lg shadow-sm">
+                      <div className="flex items-center space-x-4">
                         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg">
-                          {formData.coinName.charAt(0)}
+                          {formData.coinTicker.slice(0, 2)}
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-lg">{formData.coinName}</h3>
+                          <p className="text-sm text-muted-foreground">{formData.coinTicker}</p>
+                        </div>
+                      </div>
+                      {chainType && (
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img 
+                              src={chainType === 'SOLANA' ? CHAIN_CONFIG.SOLANA.icon : CHAIN_CONFIG.BSC.icon} 
+                              alt={chainType === 'SOLANA' ? 'Solana' : 'BSC'} 
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+                          <span className={cn(
+                            "text-sm",
+                            chainType === 'SOLANA' ? CHAIN_CONFIG.SOLANA.className : CHAIN_CONFIG.BSC.className
+                          )}>
+                            {chainType === 'SOLANA' ? 'Solana Chain' : 'BSC Chain'}
+                          </span>
                         </div>
                       )}
-                      <div>
-                        <h3 className="font-semibold text-lg">
-                          {formData.coinName} <span className="text-sm text-muted-foreground">${formData.coinTicker}</span>
-                        </h3>
-                        <p className="text-sm text-muted-foreground">{formData.description}</p>
-                      </div>
                     </div>
 
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <Label htmlFor="airdropAmount" className="text-base font-medium">
+                        <Label htmlFor="tokenAmount" className="text-base font-medium">
                           Airdrop Amount
                         </Label>
                         <div className="flex items-center space-x-2">
                           <span className="text-sm font-medium">{formData.coinTicker}</span>
-                          <Switch checked={isEnteringSol} onCheckedChange={toggleInputMode} />
-                          <span className="text-sm font-medium">SOL</span>
+                          <Switch checked={isEnteringUsd} onCheckedChange={toggleInputMode} />
+                          <span className="text-sm font-medium">USD</span>
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="relative flex-grow">
                           <Input
-                            id="airdropAmount"
-                            placeholder={`Enter amount in ${isEnteringSol ? "SOL" : formData.coinTicker}`}
-                            value={isEnteringSol ? formData.solAmount : formData.airdropAmount}
+                            id="tokenAmount"
+                            placeholder={`Enter amount in ${isEnteringUsd ? "USD" : formData.coinTicker}`}
+                            value={isEnteringUsd ? formData.usdAmount : formData.tokenAmount}
                             onChange={(e) =>
-                              updateFormData(isEnteringSol ? "solAmount" : "airdropAmount", e.target.value)
+                              updateFormData(isEnteringUsd ? "usdAmount" : "tokenAmount", e.target.value)
                             }
                             className="pr-20"
                           />
                           <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                             <span className="text-sm font-medium text-muted-foreground">
-                              {isEnteringSol ? "SOL" : formData.coinTicker}
+                              {isEnteringUsd ? "USD" : formData.coinTicker}
                             </span>
                           </div>
                         </div>
                       </div>
                       <div className="text-sm text-right text-muted-foreground">
-                        ≈ {isEnteringSol ? formData.airdropAmount : formData.solAmount}{" "}
-                        {isEnteringSol ? formData.coinTicker : "SOL"}
+                        ≈ {isEnteringUsd ? formData.tokenAmount : formData.usdAmount}{" "}
+                        {isEnteringUsd ? formData.coinTicker : "USD"}
                       </div>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
-              {errorMessage && (
-                <div className="text-red-500 text-sm mt-2">
-                  {errorMessage}
-                </div>
-              )}
             </div>
           )}
 
@@ -405,7 +808,7 @@ export function LaunchForm() {
                   </div>
                   <Slider
                     value={[formData.weights[type as keyof typeof formData.weights]]}
-                    onValueChange={([value]) => updateWeight(type as "influencer" | "community" | "whale", value)}
+                    onValueChange={(values: number[]) => updateWeight(type as "influencer" | "community" | "whale", values[0])}
                     max={100}
                     step={1}
                     className="[&_[role=slider]]:bg-blue-500"
@@ -417,72 +820,22 @@ export function LaunchForm() {
 
           {step === 2 && (
             <div className="flex flex-col items-center justify-center py-12 space-y-6 text-center">
-              {!hasBetaAccess ? (
-                <div className="space-y-6 w-full max-w-md">
-                  <div className="h-12 w-12 mx-auto rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <Wallet className="h-6 w-6 text-blue-500" />
-                  </div>
-                  <div className="space-y-2">
-                    <h2 className="text-xl font-semibold tracking-tight">Currently in Closed Beta</h2>
-                    <p className="text-sm text-muted-foreground">Enter your beta code to proceed or request access below</p>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Input
-                        placeholder="Enter beta code"
-                        value={betaCode}
-                        onChange={(e) => {
-                          setBetaCode(e.target.value)
-                          setBetaError("")
-                        }}
-                        className="text-center"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            validateBetaCode()
-                          }
-                        }}
-                      />
-                      {betaError && (
-                        <p className="text-sm text-red-500 mt-1">{betaError}</p>
-                      )}
-                      <Button 
-                        onClick={validateBetaCode} 
-                        className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
-                      >
-                        Submit Code
-                      </Button>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      Don't have a code?{" "}
-                      <a 
-                        href="https://forms.gle/r2NKqugHKPdrJciQ9" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline"
-                      >
-                        Request Access
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                    <Wallet className="h-6 w-6 text-blue-500" />
-                  </div>
-                  <div className="space-y-2">
-                    <h2 className="text-xl font-semibold tracking-tight">Connect Your Wallet</h2>
-                    <p className="text-sm text-muted-foreground">Connect your wallet to proceed with the airdrop setup</p>
-                  </div>
-                  <WalletMultiButton className="!bg-blue-500 hover:!bg-blue-600 !text-white" />
-                  {connected && (
-                    <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-md">
-                      <p className="font-semibold">Wallet Connected</p>
-                      <p className="text-sm mt-1">Address: {publicKey?.toBase58()}</p>
-                    </div>
-                  )}
-                </>
-              )}
+              <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <Wallet className="h-6 w-6 text-blue-500" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-xl font-semibold tracking-tight">Connect Your Wallet</h2>
+                <p className="text-sm text-muted-foreground">Connect your wallet to proceed with the airdrop setup</p>
+              </div>
+              <Button
+                onClick={handleConnectWallet}
+                disabled={!chainType}
+                className="w-full"
+              >
+                {isWalletConnected
+                  ? `Connected: ${connectedAddress?.slice(0, 4)}...${connectedAddress?.slice(-4)}`
+                  : `Connect ${chainType === 'BSC' ? 'MetaMask' : 'Solana'} Wallet`}
+              </Button>
             </div>
           )}
 
@@ -499,7 +852,7 @@ export function LaunchForm() {
                 <div className="flex justify-between">
                   <span className="font-medium">Amount:</span>
                   <span>
-                    {formData.airdropAmount} {formData.coinTicker} (≈ {formData.solAmount} SOL)
+                    {formData.tokenAmount} {formData.coinTicker} (≈ {formData.usdAmount} USD)
                   </span>
                 </div>
                 <div className="flex justify-between">
