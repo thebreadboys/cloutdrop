@@ -15,9 +15,15 @@ import { useWallet } from "@solana/wallet-adapter-react"
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui"
 import { AirdropAnimation } from "@/components/airdrop-animation"
 
+// Add network type
+type Network = "solana" | "bsc";
+
+// Add BSC API key (you'll need to add this to your env variables)
+const BSC_API_KEY = process.env.NEXT_PUBLIC_BSC_API_KEY
 const HELIUS_API_KEY = process.env.NEXT_PUBLIC_HELIUS_API_KEY
-if (!HELIUS_API_KEY) {
-  throw new Error("HELIUS_API_KEY is not set")
+
+if (!HELIUS_API_KEY || !BSC_API_KEY) {
+  throw new Error("API keys are not set")
 }
 
 const STEPS = [
@@ -65,6 +71,7 @@ export function LaunchForm() {
   const [betaCode, setBetaCode] = useState("")
   const [hasBetaAccess, setHasBetaAccess] = useState(false)
   const [betaError, setBetaError] = useState("")
+  const [selectedNetwork, setSelectedNetwork] = useState<Network>("solana")
 
   const { publicKey, connected } = useWallet()
   const router = useRouter()
@@ -74,49 +81,83 @@ export function LaunchForm() {
 
   const fetchTokenInfo = async (contractAddress: string) => {
     setIsLoading(true)
-    setErrorMessage("") // Reset error message
+    setErrorMessage("")
     try {
-      const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'my-id',
-          method: 'getAsset',
-          params: {
-            id: contractAddress,
-            displayOptions: {
-              showFungible: true, // Return details about a fungible token
-            },
-          },
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Token not found")
+      if (selectedNetwork === "solana") {
+        return await fetchSolanaTokenInfo(contractAddress)
+      } else {
+        return await fetchBSCTokenInfo(contractAddress)
       }
-
-      const { result } = await response.json()
-      const tokenInfo = {
-        name: result.content?.metadata?.name || "Unknown",
-        ticker: result.content?.metadata?.symbol || "N/A",
-        description: result.content?.metadata?.description || "No description available",
-        exchangeRate: result.token_info?.price_info?.price_per_token || 0, // Default to 0 if not available
-        image: result.content?.files?.[0]?.uri || result.content?.links?.image || "", // Use the image URI
-      }
-
-      setExchangeRate(tokenInfo.exchangeRate)
-      setIsValidated(true)
-      return tokenInfo
     } catch (error) {
-      const err = error as Error;
-      console.error("Error fetching token info:", err);
-      setErrorMessage(err.message);
-      setIsValidated(false);
+      const err = error as Error
+      console.error("Error fetching token info:", err)
+      setErrorMessage(err.message)
+      setIsValidated(false)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const fetchSolanaTokenInfo = async (contractAddress: string) => {
+    const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'my-id',
+        method: 'getAsset',
+        params: {
+          id: contractAddress,
+          displayOptions: {
+            showFungible: true,
+          },
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error("Token not found")
+    }
+
+    const { result } = await response.json()
+    return {
+      name: result.content?.metadata?.name || "Unknown",
+      ticker: result.content?.metadata?.symbol || "N/A",
+      description: result.content?.metadata?.description || "No description available",
+      exchangeRate: result.token_info?.price_info?.price_per_token || 0,
+      image: result.content?.files?.[0]?.uri || result.content?.links?.image || "",
+    }
+  }
+
+  const fetchBSCTokenInfo = async (contractAddress: string) => {
+    // Using BSCScan API for token info
+    const response = await fetch(
+      `https://api.bscscan.com/api?module=token&action=tokeninfo&contractaddress=${contractAddress}&apikey=${BSC_API_KEY}`
+    )
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch BSC token")
+    }
+
+    const data = await response.json()
+    if (data.status === "0") {
+      throw new Error(data.result || "Token not found")
+    }
+
+    // Get token price from a DEX or price API
+    const priceResponse = await fetch(
+      `https://api.pancakeswap.info/api/v2/tokens/${contractAddress}`
+    )
+    const priceData = await priceResponse.json()
+
+    return {
+      name: data.result[0].name || "Unknown",
+      ticker: data.result[0].symbol || "N/A",
+      description: data.result[0].description || "No description available",
+      exchangeRate: priceData.data.price || 0,
+      image: data.result[0].image || "",
     }
   }
 
@@ -294,21 +335,43 @@ export function LaunchForm() {
         <CardContent className="pt-6">
           {step === 0 && (
             <div className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="contractAddress">Contract Address</Label>
-                <div className="relative">
-                  <Input
-                    id="contractAddress"
-                    placeholder="Enter the contract address"
-                    value={formData.contractAddress}
-                    onChange={(e) => updateFormData("contractAddress", e.target.value)}
-                    className={isLoading ? "pr-10" : ""}
-                  />
-                  {isLoading && (
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    </div>
-                  )}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Select Network</Label>
+                  <div className="flex space-x-4">
+                    <Button
+                      variant={selectedNetwork === "solana" ? "default" : "outline"}
+                      onClick={() => setSelectedNetwork("solana")}
+                      className={selectedNetwork === "solana" ? "bg-blue-500" : ""}
+                    >
+                      Solana
+                    </Button>
+                    <Button
+                      variant={selectedNetwork === "bsc" ? "default" : "outline"}
+                      onClick={() => setSelectedNetwork("bsc")}
+                      className={selectedNetwork === "bsc" ? "bg-yellow-500" : ""}
+                    >
+                      BSC
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="contractAddress">Contract Address</Label>
+                  <div className="relative">
+                    <Input
+                      id="contractAddress"
+                      placeholder={`Enter the ${selectedNetwork.toUpperCase()} contract address`}
+                      value={formData.contractAddress}
+                      onChange={(e) => updateFormData("contractAddress", e.target.value)}
+                      className={isLoading ? "pr-10" : ""}
+                    />
+                    {isLoading && (
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <AnimatePresence>
