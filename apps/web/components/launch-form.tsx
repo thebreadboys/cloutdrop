@@ -17,7 +17,13 @@ import { AirdropAnimation } from "@/components/airdrop-animation"
 import { Connection, PublicKey, Transaction } from "@solana/web3.js"
 import { createTransferInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token"
 import { ethers } from 'ethers'
-import { Alchemy, Network } from 'alchemy-sdk'
+import { Alchemy } from 'alchemy-sdk'
+
+// Define custom networks since Alchemy doesn't support BSC
+const NETWORKS = {
+  SOL_MAINNET: 'mainnet-beta',
+  BSC_MAINNET: 'bsc-mainnet'
+} as const
 
 const STEPS = [
   {
@@ -75,33 +81,26 @@ const getWorkingConnection = async (): Promise<Connection> => {
   throw new Error("Unable to connect to any Solana RPC endpoint");
 };
 
-// Update the existing check function to detect chain type
+// Update the detectTokenChain function
 const detectTokenChain = async (contractAddress: string): Promise<'BSC' | 'SOLANA' | null> => {
   try {
     // Try to parse as Solana address
     const solPubKey = new PublicKey(contractAddress);
-    const alchemySolana = new Alchemy({
-      apiKey: process.env.NEXT_PUBLIC_ALCHEMY_SOLANA_API_KEY,
-      network: Network.SOL_MAINNET,
-    });
-    
     // Verify if it's a valid Solana token
-    const tokenMetadata = await alchemySolana.core.getTokenMetadata(solPubKey.toString());
-    if (tokenMetadata) return 'SOLANA';
-
+    const connection = await getWorkingConnection();
+    const tokenInfo = await connection.getParsedAccountInfo(solPubKey);
+    if (tokenInfo) return 'SOLANA';
   } catch (solError) {
     // Not a valid Solana address, try BSC
     try {
       if (!ethers.isAddress(contractAddress)) throw new Error("Invalid BSC address");
       
-      const alchemyBsc = new Alchemy({
-        apiKey: process.env.NEXT_PUBLIC_ALCHEMY_BSC_API_KEY,
-        network: Network.BSC_MAINNET,
-      });
-
-      // Verify if it's a valid BSC token
-      const tokenMetadata = await alchemyBsc.core.getTokenMetadata(contractAddress);
-      if (tokenMetadata) return 'BSC';
+      // Create a provider to check if the contract exists
+      const provider = new ethers.JsonRpcProvider(BSC_RPC);
+      const code = await provider.getCode(contractAddress);
+      
+      // If the address has code, it's a contract
+      if (code !== '0x') return 'BSC';
 
     } catch (bscError) {
       console.error("BSC validation error:", bscError);
@@ -111,7 +110,7 @@ const detectTokenChain = async (contractAddress: string): Promise<'BSC' | 'SOLAN
   return null;
 };
 
-// Update the transferBSCTokens function
+// Update the transferBSCTokens function with better error handling
 const transferBSCTokens = async (
   contractAddress: string,
   amount: string,
@@ -119,7 +118,7 @@ const transferBSCTokens = async (
 ): Promise<boolean> => {
   try {
     if (!window.ethereum) {
-      throw new Error("MetaMask or similar wallet not found");
+      throw new Error("MetaMask or similar wallet not found. Please install MetaMask to continue.");
     }
 
     // Connect to BSC
@@ -135,7 +134,6 @@ const transferBSCTokens = async (
           params: [{ chainId: `0x${BSC_CHAIN_ID.toString(16)}` }],
         });
       } catch (switchError: any) {
-        // This error code indicates that the chain has not been added to MetaMask
         if (switchError.code === 4902) {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
@@ -152,21 +150,38 @@ const transferBSCTokens = async (
             }]
           });
         } else {
-          throw switchError;
+          throw new Error("Failed to switch to BSC network. Please switch manually in MetaMask.");
         }
       }
     }
 
-    // Setup contract
+    // Setup contract with error handling
     const tokenContract = new ethers.Contract(contractAddress, ERC20_ABI, signer);
-    const decimals = await tokenContract.decimals();
+    let decimals;
+    try {
+      decimals = await tokenContract.decimals();
+    } catch (error) {
+      throw new Error("Failed to get token decimals. Make sure this is a valid BEP-20 token.");
+    }
+
     const amountBigInt = ethers.parseUnits(amount, decimals);
 
-    // Send transaction
-    const tx = await tokenContract.transfer(destinationAddress, amountBigInt);
-    await tx.wait();
-    
-    return true;
+    // Send transaction with proper error handling
+    try {
+      const tx = await tokenContract.transfer(destinationAddress, amountBigInt);
+      const receipt = await tx.wait();
+      
+      if (!receipt.status) {
+        throw new Error("Transaction failed. Please check your balance and try again.");
+      }
+      
+      return true;
+    } catch (error: any) {
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+        throw new Error("Insufficient funds to complete the transaction.");
+      }
+      throw error;
+    }
   } catch (error) {
     console.error("BSC transfer error:", error);
     throw error;
@@ -221,10 +236,15 @@ const fetchBSCTokenInfo = async (contractAddress: string) => {
   }
 };
 
-// Add type declaration for window.ethereum
+// Update the window.ethereum type declaration
 declare global {
   interface Window {
-    ethereum?: any;
+    ethereum?: {
+      isMetaMask?: boolean;
+      request: (args: { method: string; params?: any[] }) => Promise<any>;
+      on?: (...args: any[]) => void;
+      removeListener?: (...args: any[]) => void;
+    };
   }
 }
 
@@ -673,7 +693,7 @@ export function LaunchForm() {
                   </div>
                   <Slider
                     value={[formData.weights[type as keyof typeof formData.weights]]}
-                    onValueChange={([value]) => updateWeight(type as "influencer" | "community" | "whale", value)}
+                    onValueChange={(values: number[]) => updateWeight(type as "influencer" | "community" | "whale", values[0])}
                     max={100}
                     step={1}
                     className="[&_[role=slider]]:bg-blue-500"
